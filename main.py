@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 import re
@@ -9,7 +9,7 @@ import urllib.request
 TOKEN = "8724156247:AAH26WN2k9dlI-K3PFgj665F2r1aGRH4OMw"  # توکن جدید بذار
 
 # زمان تهران (UTC+3:30)
-TEHRAN = timedelta(hours=3, minutes=30)
+TEHRAN_OFFSET = timedelta(hours=3, minutes=30)
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -22,7 +22,8 @@ schedules = {}
 
 # ============ توابع کمکی ============
 def now_tehran():
-    return datetime.utcnow() + TEHRAN
+    """گرفتن زمان تهران با timezone-aware"""
+    return datetime.now(timezone.utc) + TEHRAN_OFFSET
 
 def get_chat_type(chat):
     if chat.type == "channel":
@@ -35,14 +36,16 @@ def is_valid_time(time_str):
     return bool(re.match(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$', time_str))
 
 def delete_webhook():
-    """پاک کردن Webhook با urllib"""
+    """پاک کردن Webhook"""
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/deleteWebhook"
         with urllib.request.urlopen(url) as response:
-            return response.read()
+            result = response.read().decode()
+            print(f"✅ Webhook پاک شد: {result}")
+            return True
     except Exception as e:
         print(f"⚠️ خطا در پاک کردن Webhook: {e}")
-        return None
+        return False
 
 # ============ دستورات ============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -256,30 +259,34 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ ارسال خودکار ============
 async def auto_send_messages(context: ContextTypes.DEFAULT_TYPE):
-    now = now_tehran()
-    current_time = now.strftime("%H:%M")
-    today = now.strftime("%Y/%m/%d")
-    
-    for chat_id, data in list(schedules.items()):
-        if data["enabled"] and data["time"] == current_time:
-            try:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"⏰ ساعت دیجیاتالی هوشمند\n\n"
-                         f"زمان: {current_time}\n"
-                         f"تاریخ: {today}\n\n"
-                         f"این پیام به صورت خودکار ارسال شد."
-                )
-                logger.info(f"✅ Message sent to {chat_id}")
-            except Exception as e:
-                logger.error(f"❌ Error sending to {chat_id}: {e}")
-                if "chat not found" in str(e) or "bot was blocked" in str(e):
-                    data["enabled"] = False
+    try:
+        now = now_tehran()
+        current_time = now.strftime("%H:%M")
+        today = now.strftime("%Y/%m/%d")
+        
+        for chat_id, data in list(schedules.items()):
+            if data["enabled"] and data["time"] == current_time:
+                try:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"⏰ ساعت دیجیاتالی هوشمند\n\n"
+                             f"زمان: {current_time}\n"
+                             f"تاریخ: {today}\n\n"
+                             f"این پیام به صورت خودکار ارسال شد."
+                    )
+                    logger.info(f"✅ Message sent to {chat_id}")
+                except Exception as e:
+                    logger.error(f"❌ Error sending to {chat_id}: {e}")
+                    if "chat not found" in str(e) or "bot was blocked" in str(e):
+                        data["enabled"] = False
+    except Exception as e:
+        logger.error(f"Error in auto_send: {e}")
 
 # ============ اجرا ============
 def main():
     try:
         # پاک کردن Webhook
+        print("🔄 در حال پاک کردن Webhook...")
         delete_webhook()
         
         print("=" * 50)
@@ -300,21 +307,30 @@ def main():
         application.add_handler(CommandHandler("status", status_command))
         application.add_handler(CallbackQueryHandler(button_callback))
         
-        # تنظیم JobQueue
+        # تنظیم JobQueue برای ارسال خودکار هر دقیقه
         job_queue = application.job_queue
         if job_queue:
             job_queue.run_repeating(auto_send_messages, interval=60, first=10)
-            print("✅ زمان‌بندی خودکار فعال شد")
+            print("✅ زمان‌بندی خودکار فعال شد (هر ۱ دقیقه)")
         else:
-            print("⚠️ JobQueue در دسترس نیست")
+            print("⚠️ JobQueue در دسترس نیست!")
         
         print("✅ ربات با موفقیت راه‌اندازی شد!")
+        print("💡 برای تست به ربات /start بفرستید")
         print("=" * 50)
         
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # شروع ربات با polling
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True  # این خط رو اضافه کردم
+        )
         
     except Exception as e:
         print(f"❌ خطا در راه‌اندازی: {e}")
+        print("\n🔍 راه حل:")
+        print("1. توکن را چک کنید")
+        print("2. از Console این دستور را بزنید:")
+        print(f"   curl -X POST https://api.telegram.org/bot{TOKEN}/deleteWebhook")
 
 if __name__ == "__main__":
     main()
