@@ -5,12 +5,13 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 import urllib.request
 import re
 import asyncio
+import pytz
 
 # ============ تنظیمات ============
 TOKEN = "8724156247:AAH26WN2k9dlI-K3PFgj665F2r1aGRH4OMw"  # توکن جدید بذار
 BOT_USERNAME = "@SlefGroupbot"
 
-TEHRAN_OFFSET = timedelta(hours=3, minutes=30)
+TEHRAN_TZ = pytz.timezone('Asia/Tehran')
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -20,11 +21,12 @@ logger = logging.getLogger(__name__)
 
 channels = {}
 waiting_for_channel_id = {}
-waiting_for_post = {}
+waiting_for_post = {}  # کاربرانی که منتظر فوروارد پست هستند
+channel_posts = {}  # ذخیره پست‌های هر کانال
 
 # ============ توابع کمکی ============
 def now_tehran():
-    return datetime.now(timezone.utc) + TEHRAN_OFFSET
+    return datetime.now(TEHRAN_TZ)
 
 def get_tehran_time_str():
     return now_tehran().strftime("%H:%M")
@@ -88,6 +90,9 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
         [
             InlineKeyboardButton("⚙️ تنظیم کانال", callback_data="setup_channel"),
             InlineKeyboardButton("📝 تنظیم پست", callback_data="setup_post")
+        ],
+        [
+            InlineKeyboardButton("📋 لیست کانال‌ها", callback_data="list_channels")
         ]
     ]
     
@@ -104,6 +109,51 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
+
+# ============ لیست کانال‌ها ============
+async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if not channels:
+        text = """
+<b>📋 لیست کانال‌ها</b>
+━━━━━━━━━━━━━━
+
+<i>هیچ کانالی تنظیم نشده است!</i>
+
+برای تنظیم کانال از گزینه <b>تنظیم کانال</b> استفاده کنید.
+"""
+    else:
+        channel_list = ""
+        for idx, (channel_id, data) in enumerate(channels.items(), 1):
+            status = "✅" if data.get("time_enabled", False) else "❌"
+            post_status = "📝" if channel_id in channel_posts else "📭"
+            channel_list += f"{idx}. {data['name'][:30]} {status} {post_status}\n"
+            channel_list += f"   🆔 {channel_id}\n"
+        
+        text = f"""
+<b>📋 لیست کانال‌ها</b>
+━━━━━━━━━━━━━━
+
+<b>📊 تعداد کانال‌ها:</b> {len(channels)}
+
+{channel_list}
+
+<b>راهنما:</b>
+✅ = ساعت فعال
+❌ = ساعت غیرفعال
+📝 = پست تنظیم شده
+📭 = پست تنظیم نشده
+"""
+    
+    keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
 
 # ============ تنظیم کانال ============
 async def setup_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -151,9 +201,13 @@ async def setup_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 <b>به تنظیم پست خوش آمدید!</b>
 
-لطفاً <b>متن پست</b> مورد نظر را ارسال کنید.
+لطفاً یک <b>پست</b> را به ربات <b>فوروارد</b> کنید.
 
 این پست به صورت خودکار در کانال‌های تنظیم شده ارسال خواهد شد.
+
+<b>⚠️ نکته:</b>
+• پست را <b>فوروارد</b> کنید (نه کپی)
+• ربات باید در کانال <b>ادمین</b> باشد
 """
     
     keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
@@ -165,7 +219,104 @@ async def setup_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     waiting_for_post[user_id] = True
-    logger.info(f"User {user_id} is waiting for post text")
+    logger.info(f"User {user_id} is waiting for post forward")
+
+# ============ دریافت فوروارد پست ============
+async def handle_post_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    message = update.message
+    
+    if user_id not in waiting_for_post:
+        return
+    
+    del waiting_for_post[user_id]
+    
+    # بررسی اینکه پیام فوروارد شده
+    if not message.forward_from and not message.forward_from_chat:
+        await update.message.reply_text(
+            """
+<b>❌ خطا!</b>
+━━━━━━━━━━━━━━
+
+لطفاً یک <b>پست را فوروارد</b> کنید (نه کپی).
+
+دوباره روی <b>تنظیم پست</b> کلیک کنید و پست را فوروارد کنید.
+""",
+            parse_mode='HTML'
+        )
+        return
+    
+    # ذخیره اطلاعات پست
+    post_data = {
+        "message_id": message.message_id,
+        "chat_id": message.chat.id,
+        "forward_from": message.forward_from_chat.id if message.forward_from_chat else message.forward_from.id,
+        "text": message.text or message.caption or "متن ندارد",
+        "has_media": bool(message.photo or message.video or message.document or message.audio),
+        "set_at": now_tehran().strftime("%Y/%m/%d %H:%M")
+    }
+    
+    # ذخیره پست برای همه کانال‌ها
+    for channel_id in channels:
+        if channel_id not in channel_posts:
+            channel_posts[channel_id] = []
+        channel_posts[channel_id].append(post_data)
+    
+    await update.message.reply_text(
+        f"""
+<b>✅ پست با موفقیت ذخیره شد!</b>
+━━━━━━━━━━━━━━
+
+<b>📝 متن پست:</b>
+{post_data['text'][:200]}{'...' if len(post_data['text']) > 200 else ''}
+
+<b>📎 رسانه:</b> {'✅ دارد' if post_data['has_media'] else '❌ ندارد'}
+
+پست به <b>{len(channels)}</b> کانال ارسال خواهد شد.
+""",
+        parse_mode='HTML'
+    )
+    
+    # ارسال پست به همه کانال‌ها با ساعت
+    current_time = get_tehran_time_str()
+    await send_post_to_channels(context, post_data, current_time)
+    
+    logger.info(f"Post set by user {user_id}")
+
+async def send_post_to_channels(context, post_data, time_str):
+    """ارسال پست به همه کانال‌ها با ساعت"""
+    for channel_id, data in channels.items():
+        try:
+            # ساخت متن با ساعت
+            post_text = f"{time_str} | {post_data['text']}" if post_data['text'] else f"{time_str} | پست"
+            
+            # ارسال پست با رسانه
+            if post_data.get('forward_from'):
+                try:
+                    # فوروارد کردن پست اصلی
+                    await context.bot.forward_message(
+                        chat_id=channel_id,
+                        from_chat_id=post_data['chat_id'],
+                        message_id=post_data['message_id']
+                    )
+                except Exception as e:
+                    logger.error(f"Error forwarding post: {e}")
+                    # اگر فوروارد نشد، متن رو بفرست
+                    await context.bot.send_message(
+                        chat_id=channel_id,
+                        text=post_text
+                    )
+            else:
+                # ارسال متن
+                await context.bot.send_message(
+                    chat_id=channel_id,
+                    text=post_text
+                )
+            
+            logger.info(f"Post sent to channel {channel_id}")
+            
+        except Exception as e:
+            logger.error(f"Error sending post to {channel_id}: {e}")
 
 # ============ دریافت آیدی کانال ============
 async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -219,7 +370,6 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 member_count_formatted = "0"
             
-            # ذخیره اسم اصلی بدون ساعت
             original_name = clean_title(chat_info.title or "بدون نام")
             
             channels[str(channel_id)] = {
@@ -321,31 +471,6 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             logger.error(f"Error setting channel {channel_id}: {e}")
 
-# ============ دریافت متن پست ============
-async def handle_post_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text
-    
-    if user_id not in waiting_for_post:
-        return
-    
-    del waiting_for_post[user_id]
-    
-    context.user_data['post_text'] = text
-    
-    await update.message.reply_text(
-        f"""
-<b>✅ متن پست با موفقیت ذخیره شد!</b>
-━━━━━━━━━━━━━━
-
-<b>📝 متن پست:</b>
-{text[:200]}{'...' if len(text) > 200 else ''}
-
-پست آماده ارسال به کانال‌های تنظیم شده است.
-""",
-        parse_mode='HTML'
-    )
-
 # ============ فعال‌سازی ساعت ============
 async def time_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -363,9 +488,7 @@ async def time_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         current_time = get_tehran_time_str()
         original_name = channel_data.get("original_name", channel_data["name"])
-        # حذف ساعت از انتهای اسم
         clean = clean_title(original_name)
-        # اضافه کردن ساعت به انتهای اسم با فرمت 'Method Scam 22:02'
         new_title = add_time_to_title(clean, current_time)
         
         await context.bot.set_chat_title(
@@ -490,9 +613,7 @@ async def handle_channel_title_change(update: Update, context: ContextTypes.DEFA
     
     channel_data = channels[chat_id]
     
-    # اسم جدید رو بگیر
     current_title = chat.title
-    # ساعت رو از انتهای اسم حذف کن
     clean = clean_title(current_title)
     
     if channel_data.get("time_enabled", False):
@@ -514,9 +635,8 @@ async def handle_channel_title_change(update: Update, context: ContextTypes.DEFA
         channel_data["original_name"] = clean
         channel_data["name"] = current_title
 
-# ============ حذف پیام‌های تغییر اسم ============
+# ============ حذف پیام‌های خدماتی ============
 async def delete_service_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """حذف پیام‌های خدماتی مثل 'نام کانال به ... تغییر یافت'"""
     message = update.effective_message
     
     if message and message.chat and str(message.chat.id) in channels:
@@ -530,30 +650,37 @@ async def delete_service_messages(update: Update, context: ContextTypes.DEFAULT_
             except Exception as e:
                 logger.error(f"Error deleting service message: {e}")
 
-# ============ به‌روزرسانی ساعت ============
+# ============ به‌روزرسانی دقیق ساعت ============
 async def update_time_every_minute(context: ContextTypes.DEFAULT_TYPE):
-    current_time = get_tehran_time_str()
-    
-    for channel_id, channel_data in channels.items():
-        if channel_data.get("time_enabled", False):
-            try:
-                chat = await context.bot.get_chat(channel_id)
-                current_title = chat.title or ""
-                
-                clean = clean_title(current_title)
-                new_title = add_time_to_title(clean, current_time)
-                
-                if new_title != current_title:
-                    await context.bot.set_chat_title(
-                        chat_id=channel_id,
-                        title=new_title
-                    )
-                    channel_data["name"] = new_title
-                    channel_data["original_name"] = clean
-                    logger.info(f"Updated time for channel {channel_id}: {new_title}")
-                    
-            except Exception as e:
-                logger.error(f"Error updating time for {channel_id}: {e}")
+    """به‌روزرسانی دقیق ساعت هر دقیقه"""
+    try:
+        current_time = get_tehran_time_str()
+        current_second = now_tehran().second
+        
+        # فقط وقتی ثانیه صفر هست آپدیت کن (دقیقاً سر وقت)
+        if current_second == 0:
+            for channel_id, channel_data in channels.items():
+                if channel_data.get("time_enabled", False):
+                    try:
+                        chat = await context.bot.get_chat(channel_id)
+                        current_title = chat.title or ""
+                        
+                        clean = clean_title(current_title)
+                        new_title = add_time_to_title(clean, current_time)
+                        
+                        if new_title != current_title:
+                            await context.bot.set_chat_title(
+                                chat_id=channel_id,
+                                title=new_title
+                            )
+                            channel_data["name"] = new_title
+                            channel_data["original_name"] = clean
+                            logger.info(f"Updated time for channel {channel_id}: {new_title}")
+                            
+                    except Exception as e:
+                        logger.error(f"Error updating time for {channel_id}: {e}")
+    except Exception as e:
+        logger.error(f"Error in time update: {e}")
 
 # ============ ورود به کانال/گروه ============
 async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -675,23 +802,23 @@ def main():
         
         application.add_handler(CallbackQueryHandler(setup_channel, pattern="^setup_channel$"))
         application.add_handler(CallbackQueryHandler(setup_post, pattern="^setup_post$"))
+        application.add_handler(CallbackQueryHandler(list_channels, pattern="^list_channels$"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
         application.add_handler(CallbackQueryHandler(time_on, pattern="^time_on_"))
         application.add_handler(CallbackQueryHandler(time_off, pattern="^time_off_"))
         
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_channel_id))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_post_text))
+        application.add_handler(MessageHandler(filters.ALL, handle_post_forward))
         
         application.add_handler(ChatMemberHandler(chat_member_update, ChatMemberHandler.CHAT_MEMBER))
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, handle_channel_title_change))
-        
-        # حذف پیام‌های خدماتی تغییر نام
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, delete_service_messages), group=1)
         
+        # Job برای به‌روزرسانی دقیق ساعت (هر ثانیه چک میکنه ولی فقط وقتی ثانیه صفر باشه آپدیت میکنه)
         job_queue = application.job_queue
         if job_queue:
-            job_queue.run_repeating(update_time_every_minute, interval=60, first=10)
-            print("✅ ساعت‌شمار فعال شد (هر ۱ دقیقه)")
+            job_queue.run_repeating(update_time_every_minute, interval=1, first=1)
+            print("✅ ساعت‌شمار فعال شد (آپدیت دقیق هر دقیقه)")
         
         print("✅ ربات روشن شد!")
         print("💡 برای شروع /start بفرست")
