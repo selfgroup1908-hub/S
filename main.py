@@ -59,6 +59,15 @@ def format_number(num):
     except:
         return str(num)
 
+def clean_title(title):
+    """حذف ساعت از انتهای اسم کانال"""
+    return re.sub(r'\s*\d{2}:\d{2}$', '', title)
+
+def add_time_to_title(title, time_str):
+    """اضافه کردن ساعت به انتهای اسم کانال با فرمت 'Method Scam 22:02'"""
+    clean = clean_title(title)
+    return f"{clean} {time_str}"
+
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
     user = update.effective_user
@@ -210,6 +219,9 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 member_count_formatted = "0"
             
+            # ذخیره اسم اصلی بدون ساعت
+            original_name = clean_title(chat_info.title or "بدون نام")
+            
             channels[str(channel_id)] = {
                 "name": chat_info.title or "بدون نام",
                 "id": channel_id,
@@ -220,7 +232,7 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "setup_at": now_tehran().strftime("%Y/%m/%d %H:%M"),
                 "set_by": user_mention(update.effective_user),
                 "time_enabled": False,
-                "original_name": chat_info.title or "بدون نام"
+                "original_name": original_name
             }
             
             text = f"""
@@ -350,9 +362,11 @@ async def time_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         current_time = get_tehran_time_str()
-        current_title = channel_data.get("original_name", channel_data["name"])
-        clean_title = re.sub(r'^\d{2}:\d{2}\s*', '', current_title)
-        new_title = f"{current_time} {clean_title}"
+        original_name = channel_data.get("original_name", channel_data["name"])
+        # حذف ساعت از انتهای اسم
+        clean = clean_title(original_name)
+        # اضافه کردن ساعت به انتهای اسم با فرمت 'Method Scam 22:02'
+        new_title = add_time_to_title(clean, current_time)
         
         await context.bot.set_chat_title(
             chat_id=channel_id,
@@ -360,9 +374,8 @@ async def time_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         channel_data["name"] = new_title
-        channel_data["original_name"] = clean_title
+        channel_data["original_name"] = clean
         
-        # ساخت پیام جدید با متن متفاوت برای جلوگیری از خطای "Message is not modified"
         text = f"""
 <b>✅ ساعت با موفقیت فعال شد!</b>
 ━━━━━━━━━━━━━━
@@ -388,7 +401,6 @@ async def time_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='HTML'
             )
         except Exception as e:
-            # اگر پیام تغییر نکرده بود، فقط دکمه‌ها رو آپدیت کن
             if "Message is not modified" in str(e):
                 await query.edit_message_reply_markup(
                     reply_markup=InlineKeyboardMarkup(keyboard)
@@ -417,22 +429,22 @@ async def time_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel_data["time_enabled"] = False
     
     try:
-        current_title = channel_data.get("original_name", channel_data["name"])
-        clean_title = re.sub(r'^\d{2}:\d{2}\s*', '', current_title)
+        original_name = channel_data.get("original_name", channel_data["name"])
+        clean = clean_title(original_name)
         
         await context.bot.set_chat_title(
             chat_id=channel_id,
-            title=clean_title
+            title=clean
         )
         
-        channel_data["name"] = clean_title
-        channel_data["original_name"] = clean_title
+        channel_data["name"] = clean
+        channel_data["original_name"] = clean
         
         text = f"""
 <b>✅ ساعت با موفقیت غیرفعال شد!</b>
 ━━━━━━━━━━━━━━
 
-<b>📌 اسم جدید کانال:</b> {clean_title}
+<b>📌 اسم جدید کانال:</b> {clean}
 
 ساعت از اسم کانال حذف شد.
 """
@@ -478,12 +490,14 @@ async def handle_channel_title_change(update: Update, context: ContextTypes.DEFA
     
     channel_data = channels[chat_id]
     
+    # اسم جدید رو بگیر
     current_title = chat.title
-    clean_title = re.sub(r'^\d{2}:\d{2}\s*', '', current_title)
+    # ساعت رو از انتهای اسم حذف کن
+    clean = clean_title(current_title)
     
     if channel_data.get("time_enabled", False):
         time_str = get_tehran_time_str()
-        new_title = f"{time_str} {clean_title}"
+        new_title = add_time_to_title(clean, time_str)
         
         try:
             if new_title != current_title:
@@ -491,14 +505,30 @@ async def handle_channel_title_change(update: Update, context: ContextTypes.DEFA
                     chat_id=chat_id,
                     title=new_title
                 )
-                channel_data["original_name"] = clean_title
+                channel_data["original_name"] = clean
                 channel_data["name"] = new_title
                 logger.info(f"Re-added time to channel {chat_id}: {new_title}")
         except Exception as e:
             logger.error(f"Error re-adding time to {chat_id}: {e}")
     else:
-        channel_data["original_name"] = clean_title
+        channel_data["original_name"] = clean
         channel_data["name"] = current_title
+
+# ============ حذف پیام‌های تغییر اسم ============
+async def delete_service_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """حذف پیام‌های خدماتی مثل 'نام کانال به ... تغییر یافت'"""
+    message = update.effective_message
+    
+    if message and message.chat and str(message.chat.id) in channels:
+        if message.new_chat_title:
+            try:
+                await context.bot.delete_message(
+                    chat_id=message.chat.id,
+                    message_id=message.message_id
+                )
+                logger.info(f"Deleted service message: {message.new_chat_title}")
+            except Exception as e:
+                logger.error(f"Error deleting service message: {e}")
 
 # ============ به‌روزرسانی ساعت ============
 async def update_time_every_minute(context: ContextTypes.DEFAULT_TYPE):
@@ -510,8 +540,8 @@ async def update_time_every_minute(context: ContextTypes.DEFAULT_TYPE):
                 chat = await context.bot.get_chat(channel_id)
                 current_title = chat.title or ""
                 
-                clean_title = re.sub(r'^\d{2}:\d{2}\s*', '', current_title)
-                new_title = f"{current_time} {clean_title}"
+                clean = clean_title(current_title)
+                new_title = add_time_to_title(clean, current_time)
                 
                 if new_title != current_title:
                     await context.bot.set_chat_title(
@@ -519,7 +549,7 @@ async def update_time_every_minute(context: ContextTypes.DEFAULT_TYPE):
                         title=new_title
                     )
                     channel_data["name"] = new_title
-                    channel_data["original_name"] = clean_title
+                    channel_data["original_name"] = clean
                     logger.info(f"Updated time for channel {channel_id}: {new_title}")
                     
             except Exception as e:
@@ -654,6 +684,9 @@ def main():
         
         application.add_handler(ChatMemberHandler(chat_member_update, ChatMemberHandler.CHAT_MEMBER))
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, handle_channel_title_change))
+        
+        # حذف پیام‌های خدماتی تغییر نام
+        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, delete_service_messages), group=1)
         
         job_queue = application.job_queue
         if job_queue:
