@@ -17,9 +17,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# دیکشنری برای ذخیره کانال‌های تنظیم شده
 channels = {}
-waiting_for_channel_id = {}  # کاربرانی که منتظر دریافت آیدی کانال هستند
+waiting_for_channel_id = {}
 
 # ============ توابع کمکی ============
 def now_tehran():
@@ -48,6 +47,14 @@ def delete_webhook():
             return True
     except:
         return False
+
+def format_number(num):
+    if num == "نامشخص":
+        return "نامشخص"
+    try:
+        return f"{num:,}".replace(",", ".")
+    except:
+        return str(num)
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -143,24 +150,29 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_info = await context.bot.get_chat(channel_id)
         
         if chat_info.type == "channel":
-            # دریافت اطلاعات کامل کانال
+            # لینک عمومی
             chat_link = f"https://t.me/{chat_info.username}" if chat_info.username else "لینک عمومی ندارد"
-            chat_private_link = "ندارد"
             
-            # دریافت لینک خصوصی (invite link)
+            # لینک خصوصی (invite link)
+            private_link = "ندارد"
             try:
-                # بررسی اینکه ربات ادمین هست یا نه
                 bot_member = await context.bot.get_chat_member(channel_id, context.bot.id)
                 if bot_member.status in ["administrator", "creator"]:
-                    # ایجاد لینک دعوت
                     invite_link = await context.bot.create_chat_invite_link(
                         chat_id=channel_id,
                         member_limit=1,
                         expire_date=None
                     )
-                    chat_private_link = invite_link.invite_link
+                    private_link = invite_link.invite_link
             except:
                 pass
+            
+            # تعداد اعضا
+            try:
+                member_count = await context.bot.get_chat_members_count(channel_id)
+                member_count_formatted = format_number(member_count)
+            except:
+                member_count_formatted = "نامشخص"
             
             # ذخیره کانال
             channels[str(channel_id)] = {
@@ -169,19 +181,12 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "id": channel_id,
                 "username": chat_info.username,
                 "link": chat_link,
-                "private_link": chat_private_link,
+                "private_link": private_link,
                 "description": chat_info.description or "ندارد",
-                "member_count": 0,
+                "member_count": member_count_formatted,
                 "setup_at": now_tehran().strftime("%Y/%m/%d %H:%M"),
                 "set_by": user_mention(update.effective_user)
             }
-            
-            # دریافت تعداد اعضا
-            try:
-                member_count = await context.bot.get_chat_members_count(channel_id)
-                channels[str(channel_id)]["member_count"] = member_count
-            except:
-                pass
             
             text = f"""
 <b>✅ کانال با موفقیت تنظیم شد!</b>
@@ -190,8 +195,8 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 <b>📌 نام:</b> {chat_info.title}
 <b>🆔 آیدی:</b> <code>{channel_id}</code>
 <b>🔗 لینک عمومی:</b> {chat_link}
-<b>🔒 لینک خصوصی:</b> {chat_private_link}
-<b>👥 تعداد اعضا:</b> {channels[str(channel_id)]['member_count']}
+<b>🔒 لینک خصوصی:</b> {private_link}
+<b>👥 تعداد اعضا:</b> {member_count_formatted}
 
 ربات الان این کانال رو مدیریت میکنه.
 """
@@ -217,7 +222,6 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         error_message = str(e).lower()
         
         if "chat not found" in error_message or "not found" in error_message:
-            # دکمه افزودن ربات به کانال
             keyboard = [[
                 InlineKeyboardButton("➕ افزودن ربات به کانال", url=f"https://t.me/{BOT_USERNAME[1:]}?startchannel=admin")
             ]]
@@ -316,10 +320,12 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
             except:
                 pass
             
+            # تعداد اعضا
             try:
                 member_count = await context.bot.get_chat_members_count(chat_id)
+                member_count_formatted = format_number(member_count)
             except:
-                member_count = "نامشخص"
+                member_count_formatted = "نامشخص"
             
             admins_list = []
             try:
@@ -357,7 +363,7 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
 • <b>🔒 لینک خصوصی:</b> {private_link}
 
 <b>👥 آمار اعضا:</b>
-• <b>تعداد اعضا:</b> {member_count}
+• <b>تعداد اعضا:</b> {member_count_formatted}
 
 <b>👑 لیست ادمین‌ها:</b>
 {admins_text}
