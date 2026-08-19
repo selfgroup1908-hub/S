@@ -15,6 +15,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# دیکشنری برای ذخیره کانال‌های تنظیم شده
+channels = {}
+
 # ============ توابع کمکی ============
 def now_tehran():
     return datetime.now(timezone.utc) + TEHRAN_OFFSET
@@ -27,7 +30,6 @@ def get_chat_type(chat):
     return "📌 ناشناخته"
 
 def user_mention(user):
-    """ساخت منشن برای کاربر"""
     if user.username:
         return f"@{user.username}"
     else:
@@ -41,55 +43,82 @@ def delete_webhook():
     except:
         return False
 
-# ============ دکمه‌ها ============
-def main_menu_keyboard():
-    return [
-        [
-            InlineKeyboardButton("📋 اطلاعات گروه", callback_data="group_info"),
-            InlineKeyboardButton("👥 اعضا", callback_data="members")
-        ],
-        [
-            InlineKeyboardButton("📊 آمار ربات", callback_data="stats"),
-            InlineKeyboardButton("❓ راهنما", callback_data="help")
-        ]
-    ]
-
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
     user = update.effective_user
-    chat = update.effective_chat
     mention = user_mention(user)
-    chat_type = get_chat_type(chat)
     
     text = f"""
-<b>🤖 ربات دیجیاتالی</b>
+<b>🤖 ربات مدیریت کانال</b>
 ━━━━━━━━━━━━━━
 
 <b>خوش اومدی</b> {mention} 👋
 
-<b>📌 نوع چت:</b> {chat_type}
-<b>📅 تاریخ:</b> {now_tehran().strftime('%Y/%m/%d')}
+این ربات برای <b>مدیریت کانال‌ها</b> ساخته شده.
 
-<b>⚡️ منوی اصلی:</b>
+<b>⚡️ برای تنظیم کانال روی دکمه زیر کلیک کن:</b>
 """
+    
+    keyboard = [[InlineKeyboardButton("⚙️ تنظیم کانال", callback_data="setup_channel")]]
     
     if edit:
         await update.callback_query.edit_message_text(
             text,
-            reply_markup=InlineKeyboardMarkup(main_menu_keyboard()),
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
         await update.callback_query.answer("🔙 به منوی اصلی برگشتی!")
     else:
         await update.message.reply_text(
             text,
-            reply_markup=InlineKeyboardMarkup(main_menu_keyboard()),
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
 
-# ============ ورود به گروه/کانال ============
+# ============ تنظیم کانال ============
+async def setup_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    chat = update.effective_chat
+    chat_id = str(chat.id)
+    chat_type = get_chat_type(chat)
+    chat_title = chat.title or "بدون نام"
+    
+    # ذخیره کانال
+    channels[chat_id] = {
+        "name": chat_title,
+        "type": chat_type,
+        "id": chat_id,
+        "username": chat.username,
+        "setup_at": now_tehran().strftime("%Y/%m/%d %H:%M")
+    }
+    
+    text = f"""
+<b>✅ کانال با موفقیت تنظیم شد!</b>
+━━━━━━━━━━━━━━
+
+<b>📌 نام:</b> {chat_title}
+<b>📌 نوع:</b> {chat_type}
+<b>🆔 آیدی:</b> <code>{chat_id}</code>
+<b>⏰ زمان:</b> {now_tehran().strftime('%H:%M:%S')}
+
+ربات الان این {chat_type} رو مدیریت میکنه.
+"""
+    
+    keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
+    
+    logger.info(f"Channel setup: {chat_title} ({chat_id})")
+
+# ============ ورود به کانال/گروه ============
 async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """گزارش ورود ربات به گروه یا کانال"""
+    """گزارش کامل ورود ربات به کانال یا گروه"""
     chat = update.effective_chat
     chat_member = update.chat_member
     
@@ -102,41 +131,68 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
             chat_type = get_chat_type(chat)
             chat_title = chat.title or "بدون نام"
             chat_id = chat.id
-            chat_link = f"https://t.me/{chat.username}" if chat.username else "لینک عمومی ندارد"
+            chat_username = chat.username
+            chat_link = f"https://t.me/{chat_username}" if chat_username else "لینک عمومی ندارد"
             
-            # تعداد اعضا
+            # دریافت تعداد اعضا
             try:
                 member_count = await context.bot.get_chat_members_count(chat_id)
             except:
                 member_count = "نامشخص"
             
-            # اطلاعات ادمین‌ها
-            admins = []
+            # دریافت لیست ادمین‌ها
+            admins_list = []
             try:
-                chat_admins = await context.bot.get_chat_administrators(chat_id)
-                for admin in chat_admins[:5]:  # فقط ۵ تا اول
-                    admins.append(admin.user.first_name)
-                if len(chat_admins) > 5:
-                    admins.append(f"... و {len(chat_admins) - 5} نفر دیگه")
+                admins = await context.bot.get_chat_administrators(chat_id)
+                for admin in admins[:5]:
+                    if admin.user.username:
+                        admins_list.append(f"@{admin.user.username}")
+                    else:
+                        admins_list.append(admin.user.first_name)
+                if len(admins) > 5:
+                    admins_list.append(f"... و {len(admins) - 5} نفر دیگه")
             except:
-                admins = ["نامشخص"]
+                admins_list = ["نامشخص"]
             
-            # پیام گزارش
+            admins_text = "، ".join(admins_list) if admins_list else "نامشخص"
+            
+            # دریافت توضیحات کانال (اگر کانال باشه)
+            description = "ندارد"
+            if chat.type == "channel":
+                try:
+                    chat_info = await context.bot.get_chat(chat_id)
+                    if chat_info.description:
+                        description = chat_info.description[:100] + "..." if len(chat_info.description) > 100 else chat_info.description
+                except:
+                    pass
+            
+            # پیام گزارش کامل
             report_text = f"""
 <b>✅ ربات به {chat_type} اضافه شد!</b>
-━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━
 
-<b>📌 نام:</b> {chat_title}
-<b>🆔 آیدی:</b> <code>{chat_id}</code>
-<b>🔗 لینک:</b> {chat_link}
-<b>👥 تعداد اعضا:</b> {member_count}
-<b>👑 ادمین‌ها:</b> {', '.join(admins)}
-<b>⏰ زمان:</b> {now_tehran().strftime('%Y/%m/%d %H:%M')}
+<b>📌 اطلاعات کلی:</b>
+• <b>نام:</b> {chat_title}
+• <b>نوع:</b> {chat_type}
+• <b>🆔 آیدی:</b> <code>{chat_id}</code>
+• <b>🔗 لینک:</b> {chat_link}
 
-<i>✅ ربات آماده استفاده است!</i>
+<b>👥 آمار اعضا:</b>
+• <b>تعداد اعضا:</b> {member_count}
+
+<b>👑 لیست ادمین‌ها:</b>
+{admins_text}
+
+<b>📝 توضیحات:</b>
+{description}
+
+<b>⏰ زمان ورود:</b> {now_tehran().strftime('%Y/%m/%d %H:%M:%S')}
+
+━━━━━━━━━━━━━━━━━━━
+<i>✅ ربات با موفقیت به {chat_type} اضافه شد!</i>
 """
             
-            # ارسال گزارش به همون چت
+            # ارسال گزارش به همون کانال/گروه
             try:
                 await context.bot.send_message(
                     chat_id=chat_id,
@@ -146,173 +202,6 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 logger.info(f"✅ Bot joined {chat_type}: {chat_title} ({chat_id})")
             except Exception as e:
                 logger.error(f"❌ Error sending join report: {e}")
-
-# ============ اطلاعات گروه ============
-async def group_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    chat = update.effective_chat
-    user = update.effective_user
-    mention = user_mention(user)
-    
-    chat_type = get_chat_type(chat)
-    chat_title = chat.title or "بدون نام"
-    chat_id = chat.id
-    chat_link = f"https://t.me/{chat.username}" if chat.username else "لینک عمومی ندارد"
-    
-    try:
-        member_count = await context.bot.get_chat_members_count(chat_id)
-    except:
-        member_count = "نامشخص"
-    
-    text = f"""
-<b>📋 اطلاعات {chat_type}</b>
-━━━━━━━━━━━━━━
-
-<b>📌 نام:</b> {chat_title}
-<b>🆔 آیدی:</b> <code>{chat_id}</code>
-<b>🔗 لینک:</b> {chat_link}
-<b>👥 اعضا:</b> {member_count}
-<b>👤 درخواست کننده:</b> {mention}
-<b>⏰ زمان:</b> {now_tehran().strftime('%H:%M:%S')}
-"""
-    
-    keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
-
-# ============ لیست اعضا ============
-async def members_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    chat = update.effective_chat
-    chat_id = chat.id
-    
-    text = f"""
-<b>👥 لیست اعضا</b>
-━━━━━━━━━━━━━━
-
-<i>در حال دریافت اطلاعات...</i>
-"""
-    
-    keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
-    
-    # دریافت لیست اعضا (۵ تا اول)
-    try:
-        members = []
-        async for member in context.bot.get_chat_members(chat_id, limit=10):
-            if member.user.username:
-                members.append(f"@{member.user.username}")
-            else:
-                members.append(member.user.first_name)
-        
-        if members:
-            members_text = "\n".join([f"• {m}" for m in members[:10]])
-            if len(members) > 10:
-                members_text += f"\n... و {len(members) - 10} نفر دیگه"
-            
-            text = f"""
-<b>👥 لیست اعضا</b>
-━━━━━━━━━━━━━━
-
-{members_text}
-
-<b>📊 مجموع:</b> {len(members)} نفر
-"""
-        else:
-            text = """
-<b>👥 لیست اعضا</b>
-━━━━━━━━━━━━━━
-
-<i>هیچ عضوی پیدا نشد!</i>
-"""
-    except Exception as e:
-        text = f"""
-<b>👥 لیست اعضا</b>
-━━━━━━━━━━━━━━
-
-<i>خطا در دریافت لیست اعضا!</i>
-"""
-        logger.error(f"Error getting members: {e}")
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
-
-# ============ آمار ربات ============
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    bot_info = await context.bot.get_me()
-    bot_name = bot_info.first_name
-    bot_username = f"@{bot_info.username}" if bot_info.username else "ندارد"
-    
-    text = f"""
-<b>📊 آمار ربات</b>
-━━━━━━━━━━━━━━
-
-<b>🤖 نام:</b> {bot_name}
-<b>🔗 یوزرنیم:</b> {bot_username}
-<b>🆔 آیدی:</b> <code>{bot_info.id}</code>
-<b>⏰ زمان سرور:</b> {now_tehran().strftime('%H:%M:%S')}
-<b>📅 تاریخ:</b> {now_tehran().strftime('%Y/%m/%d')}
-
-<b>🟢 وضعیت:</b> آنلاین ✅
-"""
-    
-    keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
-
-# ============ راهنما ============
-async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    text = """
-<b>❓ راهنمای ربات</b>
-━━━━━━━━━━━━━━
-
-<b>🔹 قابلیت‌ها:</b>
-• گزارش ورود به گروه/کانال
-• نمایش اطلاعات گروه
-• مشاهده لیست اعضا
-• نمایش آمار ربات
-
-<b>🔸 نحوه استفاده:</b>
-ربات رو به گروه یا کانال اضافه کن
-خودکار گزارش میده!
-
-<b>⚡️ منو:</b>
-از دکمه‌های زیر استفاده کن
-"""
-    
-    keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
 
 # ============ دکمه برگشت ============
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -327,11 +216,11 @@ def main():
     try:
         delete_webhook()
         
-        print("=" * 50)
-        print("🚀 ربات دیجیاتالی")
-        print("=" * 50)
+        print("=" * 60)
+        print("🚀 ربات مدیریت کانال دیجیاتالی")
+        print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
-        print("=" * 50)
+        print("=" * 60)
         
         application = Application.builder().token(TOKEN).build()
         
@@ -339,18 +228,15 @@ def main():
         application.add_handler(CommandHandler("start", start))
         
         # دکمه‌ها
-        application.add_handler(CallbackQueryHandler(group_info, pattern="^group_info$"))
-        application.add_handler(CallbackQueryHandler(members_list, pattern="^members$"))
-        application.add_handler(CallbackQueryHandler(stats, pattern="^stats$"))
-        application.add_handler(CallbackQueryHandler(help_menu, pattern="^help$"))
+        application.add_handler(CallbackQueryHandler(setup_channel, pattern="^setup_channel$"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
         
-        # گزارش ورود به گروه/کانال
+        # گزارش ورود به کانال/گروه
         application.add_handler(ChatMemberHandler(chat_member_update, ChatMemberHandler.CHAT_MEMBER))
         
         print("✅ ربات روشن شد!")
-        print("💡 /start بفرست")
-        print("=" * 50)
+        print("💡 برای شروع /start بفرست")
+        print("=" * 60)
         
         application.run_polling(
             allowed_updates=Update.ALL_TYPES,
