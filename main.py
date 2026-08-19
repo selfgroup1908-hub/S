@@ -3,8 +3,7 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 import re
-import os
-import requests
+import urllib.request
 
 # ============ تنظیمات ============
 TOKEN = "8724156247:AAH26WN2k9dlI-K3PFgj665F2r1aGRH4OMw"  # توکن جدید بذار
@@ -34,6 +33,16 @@ def get_chat_type(chat):
 
 def is_valid_time(time_str):
     return bool(re.match(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$', time_str))
+
+def delete_webhook():
+    """پاک کردن Webhook با urllib"""
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/deleteWebhook"
+        with urllib.request.urlopen(url) as response:
+            return response.read()
+    except Exception as e:
+        print(f"⚠️ خطا در پاک کردن Webhook: {e}")
+        return None
 
 # ============ دستورات ============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -270,12 +279,8 @@ async def auto_send_messages(context: ContextTypes.DEFAULT_TYPE):
 # ============ اجرا ============
 def main():
     try:
-        # پاک کردن Webhook قبل از شروع
-        try:
-            requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook")
-            print("✅ Webhook پاک شد")
-        except:
-            pass
+        # پاک کردن Webhook
+        delete_webhook()
         
         print("=" * 50)
         print("🚀 راه‌اندازی ربات ساعت دیجیاتالی هوشمند")
@@ -283,14 +288,10 @@ def main():
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 50)
         
-        # نصب job-queue
-        try:
-            from telegram.ext import JobQueue
-            application = Application.builder().token(TOKEN).build()
-        except:
-            # اگر job-queue نصب نیست، بدون اون اجرا کن
-            application = Application.builder().token(TOKEN).build()
+        # ساخت اپلیکیشن
+        application = Application.builder().token(TOKEN).build()
         
+        # اضافه کردن هندلرها
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("set_time", set_time))
@@ -305,8 +306,7 @@ def main():
             job_queue.run_repeating(auto_send_messages, interval=60, first=10)
             print("✅ زمان‌بندی خودکار فعال شد")
         else:
-            print("⚠️ JobQueue در دسترس نیست! برای نصب: pip install 'python-telegram-bot[job-queue]'")
-            print("⚠️ ربات بدون زمان‌بندی خودکار اجرا می‌شود")
+            print("⚠️ JobQueue در دسترس نیست")
         
         print("✅ ربات با موفقیت راه‌اندازی شد!")
         print("=" * 50)
