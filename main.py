@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime, timedelta, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ChatMemberHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, ChatMemberHandler, filters
 import urllib.request
+import re
 
 # ============ تنظیمات ============
 TOKEN = "8724156247:AAH26WN2k9dlI-K3PFgj665F2r1aGRH4OMw"  # توکن جدید بذار
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # دیکشنری برای ذخیره کانال‌های تنظیم شده
 channels = {}
+waiting_for_channel_id = {}  # کاربرانی که منتظر دریافت آیدی کانال هستند
 
 # ============ توابع کمکی ============
 def now_tehran():
@@ -34,6 +36,10 @@ def user_mention(user):
         return f"@{user.username}"
     else:
         return f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
+
+def is_telegram_id(text):
+    """بررسی اینکه متن یک آیدی عددی تلگرام هست یا نه"""
+    return bool(re.match(r'^-?\d+$', text.strip()))
 
 def delete_webhook():
     try:
@@ -80,30 +86,19 @@ async def setup_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    chat = update.effective_chat
-    chat_id = str(chat.id)
-    chat_type = get_chat_type(chat)
-    chat_title = chat.title or "بدون نام"
-    
-    # ذخیره کانال
-    channels[chat_id] = {
-        "name": chat_title,
-        "type": chat_type,
-        "id": chat_id,
-        "username": chat.username,
-        "setup_at": now_tehran().strftime("%Y/%m/%d %H:%M")
-    }
+    user_id = query.from_user.id
     
     text = f"""
-<b>✅ کانال با موفقیت تنظیم شد!</b>
+<b>⚙️ تنظیم کانال</b>
 ━━━━━━━━━━━━━━
 
-<b>📌 نام:</b> {chat_title}
-<b>📌 نوع:</b> {chat_type}
-<b>🆔 آیدی:</b> <code>{chat_id}</code>
-<b>⏰ زمان:</b> {now_tehran().strftime('%H:%M:%S')}
+لطفاً <b>آیدی عددی</b> کانال مورد نظر را وارد کنید.
 
-ربات الان این {chat_type} رو مدیریت میکنه.
+<b>📝 مثال:</b>
+<code>-1001234567890</code>
+
+<b>⚠️ نکته:</b>
+ربات باید قبلاً به کانال اضافه شده باشد!
 """
     
     keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
@@ -114,7 +109,132 @@ async def setup_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
     
-    logger.info(f"Channel setup: {chat_title} ({chat_id})")
+    # علامت‌گذاری که کاربر منتظر دریافت آیدی است
+    waiting_for_channel_id[user_id] = True
+    logger.info(f"User {user_id} is waiting for channel ID")
+
+# ============ دریافت آیدی کانال از کاربر ============
+async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    text = update.message.text.strip()
+    
+    # بررسی اینکه کاربر در حالت انتظار دریافت آیدی هست
+    if user_id not in waiting_for_channel_id:
+        return
+    
+    # حذف از لیست انتظار
+    del waiting_for_channel_id[user_id]
+    
+    # اعتبارسنجی آیدی
+    if not is_telegram_id(text):
+        await update.message.reply_text(
+            f"""
+<b>❌ آیدی نامعتبر!</b>
+━━━━━━━━━━━━━━
+
+لطفاً یک <b>آیدی عددی</b> معتبر وارد کنید.
+
+<b>📝 مثال:</b>
+<code>-1001234567890</code>
+""",
+            parse_mode='HTML'
+        )
+        return
+    
+    channel_id = int(text)
+    
+    # بررسی اینکه ربات در کانال عضو هست یا نه
+    try:
+        chat_info = await context.bot.get_chat(channel_id)
+        
+        # اگر ربات عضو کانال هست
+        if chat_info.type == "channel":
+            # ذخیره کانال
+            channels[str(channel_id)] = {
+                "name": chat_info.title or "بدون نام",
+                "type": "📢 کانال",
+                "id": channel_id,
+                "username": chat_info.username,
+                "link": f"https://t.me/{chat_info.username}" if chat_info.username else "لینک عمومی ندارد",
+                "setup_at": now_tehran().strftime("%Y/%m/%d %H:%M"),
+                "set_by": user_mention(update.effective_user)
+            }
+            
+            text = f"""
+<b>✅ کانال با موفقیت تنظیم شد!</b>
+━━━━━━━━━━━━━━
+
+<b>📌 نام:</b> {chat_info.title}
+<b>🆔 آیدی:</b> <code>{channel_id}</code>
+<b>🔗 لینک:</b> {channels[str(channel_id)]['link']}
+
+ربات الان این کانال رو مدیریت میکنه.
+"""
+            
+            await update.message.reply_text(
+                text,
+                parse_mode='HTML'
+            )
+            
+            logger.info(f"Channel setup: {chat_info.title} ({channel_id})")
+        else:
+            await update.message.reply_text(
+                f"""
+<b>❌ این آیدی یک کانال نیست!</b>
+━━━━━━━━━━━━━━
+
+لطفاً <b>آیدی یک کانال</b> معتبر وارد کنید.
+""",
+                parse_mode='HTML'
+            )
+            
+    except Exception as e:
+        error_message = str(e).lower()
+        
+        # خطاهای مختلف
+        if "chat not found" in error_message or "not found" in error_message:
+            text = f"""
+<b>❌ کانال پیدا نشد!</b>
+━━━━━━━━━━━━━━
+
+ربات در این کانال <b>عضو نیست</b> یا آیدی اشتباه است.
+
+<b>⚠️ راه حل:</b>
+۱. ربات را به کانال اضافه کنید
+۲. دوباره آیدی را وارد کنید
+"""
+        elif "bot is not a member" in error_message:
+            text = f"""
+<b>❌ ربات در کانال عضو نیست!</b>
+━━━━━━━━━━━━━━
+
+برای تنظیم کانال باید <b>ربات را به کانال اضافه کنید</b>.
+
+<b>⚠️ مراحل:</b>
+۱. به کانال خود بروید
+۲. روی <b>مدیریت کانال</b> کلیک کنید
+۳. <b>ربات را اضافه کنید</b>
+۴. دوباره آیدی را وارد کنید
+"""
+        else:
+            text = f"""
+<b>❌ خطا در تنظیم کانال!</b>
+━━━━━━━━━━━━━━
+
+خطا: {str(e)[:100]}
+
+<b>⚠️ راه حل:</b>
+۱. مطمئن شوید ربات در کانال عضو است
+۲. آیدی را درست وارد کنید
+۳. دوباره تلاش کنید
+"""
+        
+        await update.message.reply_text(
+            text,
+            parse_mode='HTML'
+        )
+        logger.error(f"Error setting channel {channel_id}: {e}")
 
 # ============ ورود به کانال/گروه ============
 async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -230,6 +350,9 @@ def main():
         # دکمه‌ها
         application.add_handler(CallbackQueryHandler(setup_channel, pattern="^setup_channel$"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
+        
+        # دریافت آیدی کانال از کاربر
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_channel_id))
         
         # گزارش ورود به کانال/گروه
         application.add_handler(ChatMemberHandler(chat_member_update, ChatMemberHandler.CHAT_MEMBER))
