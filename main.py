@@ -7,6 +7,7 @@ import re
 
 # ============ تنظیمات ============
 TOKEN = "8724156247:AAH26WN2k9dlI-K3PFgj665F2r1aGRH4OMw"  # توکن جدید بذار
+BOT_USERNAME = "@SlefGroupbot"  # یوزرنیم ربات
 
 TEHRAN_OFFSET = timedelta(hours=3, minutes=30)
 
@@ -38,7 +39,6 @@ def user_mention(user):
         return f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
 
 def is_telegram_id(text):
-    """بررسی اینکه متن یک آیدی عددی تلگرام هست یا نه"""
     return bool(re.match(r'^-?\d+$', text.strip()))
 
 def delete_webhook():
@@ -109,24 +109,19 @@ async def setup_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
     
-    # علامت‌گذاری که کاربر منتظر دریافت آیدی است
     waiting_for_channel_id[user_id] = True
     logger.info(f"User {user_id} is waiting for channel ID")
 
 # ============ دریافت آیدی کانال از کاربر ============
 async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
     text = update.message.text.strip()
     
-    # بررسی اینکه کاربر در حالت انتظار دریافت آیدی هست
     if user_id not in waiting_for_channel_id:
         return
     
-    # حذف از لیست انتظار
     del waiting_for_channel_id[user_id]
     
-    # اعتبارسنجی آیدی
     if not is_telegram_id(text):
         await update.message.reply_text(
             f"""
@@ -144,22 +139,49 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     channel_id = int(text)
     
-    # بررسی اینکه ربات در کانال عضو هست یا نه
     try:
         chat_info = await context.bot.get_chat(channel_id)
         
-        # اگر ربات عضو کانال هست
         if chat_info.type == "channel":
+            # دریافت اطلاعات کامل کانال
+            chat_link = f"https://t.me/{chat_info.username}" if chat_info.username else "لینک عمومی ندارد"
+            chat_private_link = "ندارد"
+            
+            # دریافت لینک خصوصی (invite link)
+            try:
+                # بررسی اینکه ربات ادمین هست یا نه
+                bot_member = await context.bot.get_chat_member(channel_id, context.bot.id)
+                if bot_member.status in ["administrator", "creator"]:
+                    # ایجاد لینک دعوت
+                    invite_link = await context.bot.create_chat_invite_link(
+                        chat_id=channel_id,
+                        member_limit=1,
+                        expire_date=None
+                    )
+                    chat_private_link = invite_link.invite_link
+            except:
+                pass
+            
             # ذخیره کانال
             channels[str(channel_id)] = {
                 "name": chat_info.title or "بدون نام",
                 "type": "📢 کانال",
                 "id": channel_id,
                 "username": chat_info.username,
-                "link": f"https://t.me/{chat_info.username}" if chat_info.username else "لینک عمومی ندارد",
+                "link": chat_link,
+                "private_link": chat_private_link,
+                "description": chat_info.description or "ندارد",
+                "member_count": 0,
                 "setup_at": now_tehran().strftime("%Y/%m/%d %H:%M"),
                 "set_by": user_mention(update.effective_user)
             }
+            
+            # دریافت تعداد اعضا
+            try:
+                member_count = await context.bot.get_chat_members_count(channel_id)
+                channels[str(channel_id)]["member_count"] = member_count
+            except:
+                pass
             
             text = f"""
 <b>✅ کانال با موفقیت تنظیم شد!</b>
@@ -167,7 +189,9 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 <b>📌 نام:</b> {chat_info.title}
 <b>🆔 آیدی:</b> <code>{channel_id}</code>
-<b>🔗 لینک:</b> {channels[str(channel_id)]['link']}
+<b>🔗 لینک عمومی:</b> {chat_link}
+<b>🔒 لینک خصوصی:</b> {chat_private_link}
+<b>👥 تعداد اعضا:</b> {channels[str(channel_id)]['member_count']}
 
 ربات الان این کانال رو مدیریت میکنه.
 """
@@ -192,19 +216,12 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         error_message = str(e).lower()
         
-        # خطاهای مختلف
         if "chat not found" in error_message or "not found" in error_message:
-            text = f"""
-<b>❌ کانال پیدا نشد!</b>
-━━━━━━━━━━━━━━
-
-ربات در این کانال <b>عضو نیست</b> یا آیدی اشتباه است.
-
-<b>⚠️ راه حل:</b>
-۱. ربات را به کانال اضافه کنید
-۲. دوباره آیدی را وارد کنید
-"""
-        elif "bot is not a member" in error_message:
+            # دکمه افزودن ربات به کانال
+            keyboard = [[
+                InlineKeyboardButton("➕ افزودن ربات به کانال", url=f"https://t.me/{BOT_USERNAME[1:]}?startchannel=admin")
+            ]]
+            
             text = f"""
 <b>❌ ربات در کانال عضو نیست!</b>
 ━━━━━━━━━━━━━━
@@ -212,11 +229,45 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 برای تنظیم کانال باید <b>ربات را به کانال اضافه کنید</b>.
 
 <b>⚠️ مراحل:</b>
-۱. به کانال خود بروید
-۲. روی <b>مدیریت کانال</b> کلیک کنید
-۳. <b>ربات را اضافه کنید</b>
-۴. دوباره آیدی را وارد کنید
+۱. روی دکمه <b>افزودن ربات به کانال</b> کلیک کنید
+۲. کانال خود را انتخاب کنید
+۳. ربات را به عنوان <b>ادمین</b> اضافه کنید
+۴. بعد از اضافه شدن، <b>آیدی عددی</b> کانال را دوباره بفرستید
+
+<b>📌 ربات:</b> {BOT_USERNAME}
 """
+            
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+            
+        elif "bot is not a member" in error_message:
+            keyboard = [[
+                InlineKeyboardButton("➕ افزودن ربات به کانال", url=f"https://t.me/{BOT_USERNAME[1:]}?startchannel=admin")
+            ]]
+            
+            text = f"""
+<b>❌ ربات در کانال عضو نیست!</b>
+━━━━━━━━━━━━━━
+
+برای تنظیم کانال باید <b>ربات را به کانال اضافه کنید</b>.
+
+<b>⚠️ مراحل:</b>
+۱. روی دکمه <b>افزودن ربات به کانال</b> کلیک کنید
+۲. کانال خود را انتخاب کنید
+۳. ربات را به عنوان <b>ادمین</b> اضافه کنید
+۴. بعد از اضافه شدن، <b>آیدی عددی</b> کانال را دوباره بفرستید
+
+<b>📌 ربات:</b> {BOT_USERNAME}
+"""
+            
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
         else:
             text = f"""
 <b>❌ خطا در تنظیم کانال!</b>
@@ -229,23 +280,21 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ۲. آیدی را درست وارد کنید
 ۳. دوباره تلاش کنید
 """
-        
-        await update.message.reply_text(
-            text,
-            parse_mode='HTML'
-        )
-        logger.error(f"Error setting channel {channel_id}: {e}")
+            
+            await update.message.reply_text(
+                text,
+                parse_mode='HTML'
+            )
+            logger.error(f"Error setting channel {channel_id}: {e}")
 
 # ============ ورود به کانال/گروه ============
 async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """گزارش کامل ورود ربات به کانال یا گروه"""
     chat = update.effective_chat
     chat_member = update.chat_member
     
     if not chat_member:
         return
     
-    # بررسی اینکه ربات خودش عضو شده
     if chat_member.new_chat_member.user.id == context.bot.id:
         if chat_member.new_chat_member.status in ["member", "administrator"]:
             chat_type = get_chat_type(chat)
@@ -254,13 +303,24 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
             chat_username = chat.username
             chat_link = f"https://t.me/{chat_username}" if chat_username else "لینک عمومی ندارد"
             
-            # دریافت تعداد اعضا
+            # لینک خصوصی
+            private_link = "ندارد"
+            try:
+                if chat_member.new_chat_member.status == "administrator":
+                    invite_link = await context.bot.create_chat_invite_link(
+                        chat_id=chat_id,
+                        member_limit=1,
+                        expire_date=None
+                    )
+                    private_link = invite_link.invite_link
+            except:
+                pass
+            
             try:
                 member_count = await context.bot.get_chat_members_count(chat_id)
             except:
                 member_count = "نامشخص"
             
-            # دریافت لیست ادمین‌ها
             admins_list = []
             try:
                 admins = await context.bot.get_chat_administrators(chat_id)
@@ -276,7 +336,6 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
             admins_text = "، ".join(admins_list) if admins_list else "نامشخص"
             
-            # دریافت توضیحات کانال (اگر کانال باشه)
             description = "ندارد"
             if chat.type == "channel":
                 try:
@@ -286,7 +345,6 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 except:
                     pass
             
-            # پیام گزارش کامل
             report_text = f"""
 <b>✅ ربات به {chat_type} اضافه شد!</b>
 ━━━━━━━━━━━━━━━━━━━
@@ -295,7 +353,8 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
 • <b>نام:</b> {chat_title}
 • <b>نوع:</b> {chat_type}
 • <b>🆔 آیدی:</b> <code>{chat_id}</code>
-• <b>🔗 لینک:</b> {chat_link}
+• <b>🔗 لینک عمومی:</b> {chat_link}
+• <b>🔒 لینک خصوصی:</b> {private_link}
 
 <b>👥 آمار اعضا:</b>
 • <b>تعداد اعضا:</b> {member_count}
@@ -312,7 +371,6 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
 <i>✅ ربات با موفقیت به {chat_type} اضافه شد!</i>
 """
             
-            # ارسال گزارش به همون کانال/گروه
             try:
                 await context.bot.send_message(
                     chat_id=chat_id,
@@ -340,21 +398,18 @@ def main():
         print("🚀 ربات مدیریت کانال دیجیاتالی")
         print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
+        print(f"🤖 ربات: {BOT_USERNAME}")
         print("=" * 60)
         
         application = Application.builder().token(TOKEN).build()
         
-        # دستورات
         application.add_handler(CommandHandler("start", start))
         
-        # دکمه‌ها
         application.add_handler(CallbackQueryHandler(setup_channel, pattern="^setup_channel$"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
         
-        # دریافت آیدی کانال از کاربر
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_channel_id))
         
-        # گزارش ورود به کانال/گروه
         application.add_handler(ChatMemberHandler(chat_member_update, ChatMemberHandler.CHAT_MEMBER))
         
         print("✅ ربات روشن شد!")
