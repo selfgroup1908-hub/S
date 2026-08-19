@@ -34,9 +34,8 @@ def get_chat_type(chat):
 def is_valid_time(time_str):
     return bool(re.match(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$', time_str))
 
-# ============ دستورات اصلی ============
+# ============ دستورات ============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """پیام خوشامدگویی با دکمه‌ها"""
     user = update.effective_user
     chat = update.effective_chat
     chat_type = get_chat_type(chat)
@@ -56,7 +55,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /remove - حذف زمان‌بندی
 /status - وضعیت ربات
 /help - راهنمای کامل
-/start - پیام خوشامد
 
 💡 **نکته:** برای تنظیم زمان از فرمت ۲۴ ساعته استفاده کنید.
 """
@@ -82,7 +80,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """راهنمای کامل ربات"""
     text = """
 📖 **راهنمای کامل ربات**
 
@@ -103,19 +100,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • ربات باید در گروه/کانال ادمین باشد
 • زمان به فرمت ۲۴ ساعته وارد شود
 • مثال: /set_time 14:30
-
-⏰ **ساعت دیجیاتالی هوشمند**
-ربات به صورت خودکار در زمان تعیین شده پیام ارسال می‌کند.
 """
     await update.message.reply_text(text)
 
 async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """تنظیم زمان ارسال"""
     chat = update.effective_chat
     chat_id = str(chat.id)
     chat_type = get_chat_type(chat)
     
-    # بررسی وجود آرگومان
     if not context.args:
         await update.message.reply_text(
             f"⏰ لطفاً زمان را به فرمت HH:MM وارد کنید.\n"
@@ -127,18 +119,15 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     time_str = context.args[0]
     
-    # اعتبارسنجی زمان
     if not is_valid_time(time_str):
         await update.message.reply_text(
             "❌ **فرمت زمان نامعتبر!**\n\n"
             "لطفاً از فرمت HH:MM استفاده کنید.\n"
-            "مثال: 14:30 یا 09:00\n\n"
-            "⏰ ساعت باید بین 00:00 تا 23:59 باشد.",
+            "مثال: 14:30 یا 09:00",
             parse_mode='Markdown'
         )
         return
     
-    # ذخیره زمان
     schedules[chat_id] = {
         "time": time_str,
         "enabled": True,
@@ -158,14 +147,12 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Time set for {chat_id}: {time_str}")
 
 async def view_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """مشاهده زمان‌بندی فعلی"""
     chat = update.effective_chat
     chat_id = str(chat.id)
-    chat_type = get_chat_type(chat)
     
     if chat_id not in schedules:
         await update.message.reply_text(
-            f"❌ **هیچ زمان‌بندی برای این {chat_type} تنظیم نشده است.**\n\n"
+            f"❌ **هیچ زمان‌بندی تنظیم نشده است.**\n\n"
             f"با دستور `/set_time HH:MM` زمان را تنظیم کنید.",
             parse_mode='Markdown'
         )
@@ -177,70 +164,49 @@ async def view_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"📋 **زمان‌بندی فعلی**\n\n"
         f"📌 نوع: {data['chat_type']}\n"
-        f"🆔 آیدی: `{chat_id}`\n"
         f"🕐 ساعت: `{data['time']}`\n"
-        f"📊 وضعیت: {status}\n\n"
-        f"⏰ ساعت دیجیاتالی هوشمند فعال است.",
+        f"📊 وضعیت: {status}",
         parse_mode='Markdown'
     )
 
 async def remove_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """حذف زمان‌بندی"""
     chat = update.effective_chat
     chat_id = str(chat.id)
-    chat_type = get_chat_type(chat)
     
     if chat_id not in schedules:
         await update.message.reply_text(
-            f"❌ **هیچ زمان‌بندی برای حذف وجود ندارد.**\n\n"
-            f"ابتدا با `/set_time` زمان را تنظیم کنید.",
+            f"❌ **هیچ زمان‌بندی برای حذف وجود ندارد.**",
             parse_mode='Markdown'
         )
         return
     
-    # حذف زمان‌بندی
     del schedules[chat_id]
     
     await update.message.reply_text(
-        f"✅ **زمان‌بندی با موفقیت حذف شد!**\n\n"
-        f"📌 {chat_type}: {chat.title or chat_id}\n"
-        f"⏰ ساعت دیجیاتالی غیرفعال شد.",
+        f"✅ **زمان‌بندی با موفقیت حذف شد!**",
         parse_mode='Markdown'
     )
     
     logger.info(f"Schedule removed for {chat_id}")
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """وضعیت ربات"""
     now = now_tehran()
     total = len(schedules)
     active = sum(1 for s in schedules.values() if s["enabled"])
     
-    # لیست زمان‌بندی‌ها
-    schedule_list = ""
-    if schedules:
-        for chat_id, data in list(schedules.items())[:5]:  # حداکثر ۵ تا
-            schedule_list += f"• {data['chat_type']}: {data['time']} { '✅' if data['enabled'] else '❌'}\n"
-        if len(schedules) > 5:
-            schedule_list += f"... و {len(schedules) - 5} مورد دیگر"
-    else:
-        schedule_list = "هیچ زمان‌بندی فعالی وجود ندارد"
-    
     await update.message.reply_text(
-        f"📊 **وضعیت ربات ساعت دیجیاتالی**\n\n"
+        f"📊 **وضعیت ربات**\n\n"
         f"⏰ زمان سرور: `{now.strftime('%H:%M:%S')}`\n"
         f"📅 تاریخ: `{now.strftime('%Y/%m/%d')}`\n\n"
         f"📌 تعداد کل زمان‌بندی‌ها: `{total}`\n"
         f"✅ فعال: `{active}`\n"
         f"❌ غیرفعال: `{total - active}`\n\n"
-        f"📋 **لیست زمان‌بندی‌ها:**\n{schedule_list}\n\n"
-        f"🟢 ربات به صورت ۲۴/۷ در حال اجراست.",
+        f"🟢 ربات در حال اجراست.",
         parse_mode='Markdown'
     )
 
 # ============ مدیریت دکمه‌ها ============
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """مدیریت کلیک روی دکمه‌ها"""
     query = update.callback_query
     await query.answer()
     
@@ -249,29 +215,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⏰ **تنظیم زمان**\n\n"
             "از دستور زیر استفاده کنید:\n"
             "`/set_time HH:MM`\n\n"
-            "مثال: `/set_time 18:30`\n"
-            "مثال: `/set_time 09:00`\n\n"
-            "📌 ساعت به فرمت ۲۴ ساعته وارد شود.",
+            "مثال: `/set_time 18:30`",
             parse_mode='Markdown'
         )
     
     elif query.data == "view":
-        # ایجاد یک پیام جدید برای مشاهده
-        chat = update.effective_chat
-        chat_id = str(chat.id)
-        
+        chat_id = str(update.effective_chat.id)
         if chat_id in schedules:
             data = schedules[chat_id]
             status = "✅ فعال" if data["enabled"] else "❌ غیرفعال"
-            text = (
-                f"📋 **زمان‌بندی فعلی**\n\n"
-                f"🕐 ساعت: `{data['time']}`\n"
-                f"📊 وضعیت: {status}\n"
-                f"📌 نوع: {data['chat_type']}"
-            )
+            text = f"📋 **زمان‌بندی فعلی**\n\n🕐 ساعت: `{data['time']}`\n📊 وضعیت: {status}"
         else:
             text = "❌ هیچ زمان‌بندی تنظیم نشده است."
-        
         await query.edit_message_text(text, parse_mode='Markdown')
     
     elif query.data == "remove":
@@ -286,14 +241,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = now_tehran()
         total = len(schedules)
         active = sum(1 for s in schedules.values() if s["enabled"])
-        
         await query.edit_message_text(
             f"📊 **وضعیت ربات**\n\n"
             f"⏰ زمان: `{now.strftime('%H:%M:%S')}`\n"
-            f"📅 تاریخ: `{now.strftime('%Y/%m/%d')}`\n\n"
             f"📌 کل تنظیمات: `{total}`\n"
-            f"✅ فعال: `{active}`\n"
-            f"❌ غیرفعال: `{total - active}`",
+            f"✅ فعال: `{active}`",
             parse_mode='Markdown'
         )
     
@@ -305,91 +257,63 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/view - مشاهده زمان\n"
             "/remove - حذف زمان‌بندی\n"
             "/status - وضعیت ربات\n"
-            "/help - راهنمای کامل\n\n"
-            "💡 برای اطلاعات بیشتر از /help استفاده کنید."
+            "/help - راهنمای کامل"
         )
 
-# ============ ارسال خودکار پیام ============
+# ============ ارسال خودکار ============
 async def auto_send_messages(context: ContextTypes.DEFAULT_TYPE):
-    """ارسال خودکار پیام‌ها در ساعت مشخص"""
     now = now_tehran()
     current_time = now.strftime("%H:%M")
     today = now.strftime("%Y/%m/%d")
     
-    logger.info(f"Checking time: {current_time}")
-    
     for chat_id, data in list(schedules.items()):
         if data["enabled"] and data["time"] == current_time:
             try:
-                # ارسال پیام دیجیاتالی
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text=f"⏰ **ساعت دیجیاتالی هوشمند**\n\n"
                          f"🕐 زمان: `{current_time}`\n"
-                         f"📅 تاریخ: `{today}`\n"
-                         f"📌 نوع: {data['chat_type']}\n\n"
-                         f"✨ این پیام به صورت خودکار ارسال شد.\n"
-                         f"🔔 ربات ساعت هوشمند دیجیاتالی",
+                         f"📅 تاریخ: `{today}`\n\n"
+                         f"✨ این پیام به صورت خودکار ارسال شد.",
                     parse_mode='Markdown'
                 )
-                
-                logger.info(f"✅ Message sent to {data['chat_type']} {chat_id}")
-                
+                logger.info(f"✅ Message sent to {chat_id}")
             except Exception as e:
                 logger.error(f"❌ Error sending to {chat_id}: {e}")
-                
-                # اگر خطا بود، غیرفعالش کن تا دوباره تلاش نکنه
                 if "chat not found" in str(e) or "bot was blocked" in str(e):
                     data["enabled"] = False
-                    logger.warning(f"Disabled schedule for {chat_id}")
 
-# ============ تابع اصلی ============
+# ============ اجرا ============
 def main():
-    """راه‌اندازی ربات"""
     try:
         print("=" * 50)
         print("🚀 راه‌اندازی ربات ساعت دیجیاتالی هوشمند")
         print("=" * 50)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
-        print(f"⏰ منطقه زمانی: تهران (UTC+3:30)")
         print("=" * 50)
         
-        # ساخت اپلیکیشن
         application = Application.builder().token(TOKEN).build()
         
-        # اضافه کردن هندلرهای دستورات
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("set_time", set_time))
         application.add_handler(CommandHandler("view", view_schedule))
         application.add_handler(CommandHandler("remove", remove_schedule))
         application.add_handler(CommandHandler("status", status_command))
-        
-        # هندلر دکمه‌ها
         application.add_handler(CallbackQueryHandler(button_callback))
         
-        # تنظیم Job برای ارسال خودکار (هر دقیقه)
         job_queue = application.job_queue
         if job_queue:
             job_queue.run_repeating(auto_send_messages, interval=60, first=10)
             print("✅ زمان‌بندی خودکار فعال شد")
-        else:
-            print("⚠️ JobQueue در دسترس نیست!")
         
-        # شروع ربات
         print("✅ ربات با موفقیت راه‌اندازی شد!")
-        print("💡 منتظر پیام‌های کاربران هستم...")
         print("=" * 50)
-        print()
         
         application.run_polling(allowed_updates=Update.ALL_TYPES)
         
     except Exception as e:
         print(f"❌ خطا در راه‌اندازی: {e}")
-        print("\n🔍 راه‌حل‌ها:")
-        print("1. توکن را چک کنید (به @BotFather بروید)")
-        print("2. اینترنت خود را بررسی کنید")
-        print("3. اگر خطا ادامه داشت، توکن را ریست کنید")
 
 if __name__ == "__main__":
     main()
