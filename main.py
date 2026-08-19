@@ -291,36 +291,8 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "post_from_chat": None
             }
             
-            text = f"""
-<b>✅ کانال با موفقیت تنظیم شد!</b>
-━━━━━━━━━━━━━━
-
-<b>📌 نام:</b> {chat_info.title}
-<b>🆔 آیدی:</b> <code>{channel_id}</code>
-<b>🔗 لینک عمومی:</b> {chat_link}
-<b>🔒 لینک خصوصی:</b> {private_link}
-<b>👥 تعداد اعضا:</b> {member_count_formatted}
-
-ربات الان این کانال رو مدیریت میکنه.
-"""
-            
-            keyboard = [
-                [
-                    InlineKeyboardButton("🕐 فعال‌سازی ساعت", callback_data=f"time_on_{channel_id}"),
-                    InlineKeyboardButton("🚫 غیرفعال‌سازی ساعت", callback_data=f"time_off_{channel_id}")
-                ],
-                [
-                    InlineKeyboardButton("📝 فعال‌سازی پست", callback_data=f"post_on_{channel_id}"),
-                    InlineKeyboardButton("🚫 غیرفعال‌سازی پست", callback_data=f"post_off_{channel_id}")
-                ],
-                [InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]
-            ]
-            
-            await update.message.reply_text(
-                text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='HTML'
-            )
+            # نمایش تنظیمات کانال
+            await show_channel_settings_from_message(update, context, str(channel_id))
             
             logger.info(f"Channel setup: {chat_info.title} ({channel_id})")
         else:
@@ -381,6 +353,50 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             logger.error(f"Error setting channel {channel_id}: {e}")
 
+# ============ نمایش تنظیمات کانال ============
+async def show_channel_settings_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE, channel_id):
+    channel_data = channels[channel_id]
+    
+    time_status = "✅ فعال" if channel_data.get("time_enabled", False) else "❌ غیرفعال"
+    post_status = "✅ فعال" if channel_data.get("post_enabled", False) else "❌ غیرفعال"
+    post_text = channel_data.get("post_text", "تنظیم نشده")
+    if len(post_text) > 50:
+        post_text = post_text[:50] + "..."
+    
+    text = f"""
+<b>✅ کانال با موفقیت تنظیم شد!</b>
+━━━━━━━━━━━━━━
+
+<b>📌 نام:</b> {channel_data['name']}
+<b>🆔 آیدی:</b> <code>{channel_id}</code>
+<b>👥 تعداد اعضا:</b> {channel_data['member_count']}
+
+<b>⚙️ تنظیمات:</b>
+🕐 ساعت: {time_status}
+📝 پست: {post_status}
+📄 متن پست: {post_text}
+
+برای تغییر هر کدام روی دکمه مربوطه کلیک کنید.
+"""
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("🕐 فعال‌سازی ساعت", callback_data=f"time_on_{channel_id}"),
+            InlineKeyboardButton("🚫 غیرفعال‌سازی ساعت", callback_data=f"time_off_{channel_id}")
+        ],
+        [
+            InlineKeyboardButton("📝 فعال‌سازی پست", callback_data=f"post_on_{channel_id}"),
+            InlineKeyboardButton("🚫 غیرفعال‌سازی پست", callback_data=f"post_off_{channel_id}")
+        ],
+        [InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]
+    ]
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
+
 # ============ دریافت فوروارد پست ============
 async def handle_post_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -419,6 +435,7 @@ async def handle_post_forward(update: Update, context: ContextTypes.DEFAULT_TYPE
     current_time = get_tehran_time_str()
     await send_post_to_channels(context, current_time)
     
+    # نمایش پیام موفقیت
     await update.message.reply_text(
         f"""
 <b>✅ پست با موفقیت تنظیم شد!</b>
@@ -428,47 +445,88 @@ async def handle_post_forward(update: Update, context: ContextTypes.DEFAULT_TYPE
 {post_text[:200]}{'...' if len(post_text) > 200 else ''}
 
 پست به <b>{len(channels)}</b> کانال ارسال شد.
+
+💡 برای مدیریت تنظیمات به <b>منوی اصلی</b> بروید و <b>لیست کانال‌ها</b> را ببینید.
 """,
         parse_mode='HTML'
     )
     
+    # نمایش تنظیمات برای هر کانال
+    for channel_id in channels.keys():
+        await show_channel_settings_after_post(update, context, channel_id)
+    
     logger.info(f"Post set by user {user_id}")
+
+async def show_channel_settings_after_post(update: Update, context: ContextTypes.DEFAULT_TYPE, channel_id):
+    channel_data = channels[channel_id]
+    
+    time_status = "✅ فعال" if channel_data.get("time_enabled", False) else "❌ غیرفعال"
+    post_status = "✅ فعال" if channel_data.get("post_enabled", False) else "❌ غیرفعال"
+    post_text = channel_data.get("post_text", "تنظیم نشده")
+    if len(post_text) > 50:
+        post_text = post_text[:50] + "..."
+    
+    text = f"""
+<b>⚙️ تنظیمات کانال {channel_data['name']}</b>
+━━━━━━━━━━━━━━
+
+<b>🆔 آیدی:</b> <code>{channel_id}</code>
+🕐 ساعت: {time_status}
+📝 پست: {post_status}
+📄 متن پست: {post_text}
+
+برای تغییر هر کدام روی دکمه مربوطه کلیک کنید.
+"""
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("🕐 فعال‌سازی ساعت", callback_data=f"time_on_{channel_id}"),
+            InlineKeyboardButton("🚫 غیرفعال‌سازی ساعت", callback_data=f"time_off_{channel_id}")
+        ],
+        [
+            InlineKeyboardButton("📝 فعال‌سازی پست", callback_data=f"post_on_{channel_id}"),
+            InlineKeyboardButton("🚫 غیرفعال‌سازی پست", callback_data=f"post_off_{channel_id}")
+        ],
+        [InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]
+    ]
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
 
 async def send_post_to_channels(context, time_str):
     """ارسال پست به همه کانال‌ها با ساعت"""
     for channel_id, data in channels.items():
-        if data.get("post_enabled", False):
-            try:
-                post_text = data.get("post_text", "")
-                # اضافه کردن ساعت به ابتدای پست
-                post_with_time = f"{time_str} {post_text}" if post_text else f"{time_str}"
-                
-                # اگر پست فوروارد شده بود
-                if data.get("post_message_id") and data.get("post_from_chat"):
-                    try:
-                        await context.bot.forward_message(
-                            chat_id=channel_id,
-                            from_chat_id=data["post_from_chat"],
-                            message_id=data["post_message_id"]
-                        )
-                    except Exception as e:
-                        logger.error(f"Error forwarding post: {e}")
-                        # اگر فوروارد نشد، متن رو بفرست
-                        await context.bot.send_message(
-                            chat_id=channel_id,
-                            text=post_with_time
-                        )
-                else:
-                    # ارسال متن با ساعت
+        try:
+            post_text = data.get("post_text", "")
+            post_with_time = f"{time_str} {post_text}" if post_text else f"{time_str}"
+            
+            # اگر پست فوروارد شده بود
+            if data.get("post_message_id") and data.get("post_from_chat"):
+                try:
+                    await context.bot.forward_message(
+                        chat_id=channel_id,
+                        from_chat_id=data["post_from_chat"],
+                        message_id=data["post_message_id"]
+                    )
+                except Exception as e:
+                    logger.error(f"Error forwarding post: {e}")
                     await context.bot.send_message(
                         chat_id=channel_id,
                         text=post_with_time
                     )
-                
-                logger.info(f"Post sent to channel {channel_id}")
-                
-            except Exception as e:
-                logger.error(f"Error sending post to {channel_id}: {e}")
+            else:
+                await context.bot.send_message(
+                    chat_id=channel_id,
+                    text=post_with_time
+                )
+            
+            logger.info(f"Post sent to channel {channel_id}")
+            
+        except Exception as e:
+            logger.error(f"Error sending post to {channel_id}: {e}")
 
 # ============ فعال‌سازی ساعت ============
 async def time_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -498,7 +556,7 @@ async def time_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
         channel_data["name"] = new_title
         channel_data["original_name"] = clean
         
-        await show_channel_settings(update, context, channel_id)
+        await show_channel_settings_from_callback(update, context, channel_id)
         logger.info(f"Time enabled for channel {channel_id}")
         
     except Exception as e:
@@ -530,7 +588,7 @@ async def time_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
         channel_data["name"] = clean
         channel_data["original_name"] = clean
         
-        await show_channel_settings(update, context, channel_id)
+        await show_channel_settings_from_callback(update, context, channel_id)
         logger.info(f"Time disabled for channel {channel_id}")
         
     except Exception as e:
@@ -549,7 +607,6 @@ async def post_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     channel_data = channels[channel_id]
     
-    # بررسی اینکه پست تنظیم شده یا نه
     if not channel_data.get("post_text"):
         text = """
 <b>❌ پستی تنظیم نشده است!</b>
@@ -563,7 +620,6 @@ async def post_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     channel_data["post_enabled"] = True
     
-    # ارسال پست با ساعت
     current_time = get_tehran_time_str()
     post_text = channel_data.get("post_text", "")
     post_with_time = f"{current_time} {post_text}"
@@ -581,7 +637,7 @@ async def post_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=post_with_time
             )
         
-        await show_channel_settings(update, context, channel_id)
+        await show_channel_settings_from_callback(update, context, channel_id)
         logger.info(f"Post enabled for channel {channel_id}")
         
     except Exception as e:
@@ -601,16 +657,18 @@ async def post_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel_data = channels[channel_id]
     channel_data["post_enabled"] = False
     
-    await show_channel_settings(update, context, channel_id)
+    await show_channel_settings_from_callback(update, context, channel_id)
     logger.info(f"Post disabled for channel {channel_id}")
 
-# ============ نمایش تنظیمات کانال ============
-async def show_channel_settings(update: Update, context: ContextTypes.DEFAULT_TYPE, channel_id):
+# ============ نمایش تنظیمات از کالبک ============
+async def show_channel_settings_from_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, channel_id):
     channel_data = channels[channel_id]
     
     time_status = "✅ فعال" if channel_data.get("time_enabled", False) else "❌ غیرفعال"
     post_status = "✅ فعال" if channel_data.get("post_enabled", False) else "❌ غیرفعال"
-    post_text = channel_data.get("post_text", "تنظیم نشده")[:50]
+    post_text = channel_data.get("post_text", "تنظیم نشده")
+    if len(post_text) > 50:
+        post_text = post_text[:50] + "..."
     
     text = f"""
 <b>⚙️ تنظیمات کانال</b>
@@ -620,9 +678,9 @@ async def show_channel_settings(update: Update, context: ContextTypes.DEFAULT_TY
 <b>🆔 آیدی:</b> <code>{channel_id}</code>
 <b>👥 تعداد اعضا:</b> {channel_data['member_count']}
 
-<b>🕐 وضعیت ساعت:</b> {time_status}
-<b>📝 وضعیت پست:</b> {post_status}
-<b>📄 متن پست:</b> {post_text}{'...' if len(channel_data.get('post_text', '')) > 50 else ''}
+<b>🕐 ساعت:</b> {time_status}
+<b>📝 پست:</b> {post_status}
+<b>📄 متن پست:</b> {post_text}
 
 برای تغییر هر کدام روی دکمه مربوطه کلیک کنید.
 """
@@ -640,17 +698,13 @@ async def show_channel_settings(update: Update, context: ContextTypes.DEFAULT_TY
     ]
     
     try:
-        await update.callback_query.edit_message_text(
+        await query.edit_message_text(
             text,
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
     except Exception as e:
-        await update.message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
+        logger.error(f"Error showing settings: {e}")
 
 # ============ تغییر اسم کانال ============
 async def handle_channel_title_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -859,6 +913,7 @@ def main():
         application.add_handler(CallbackQueryHandler(post_on, pattern="^post_on_"))
         application.add_handler(CallbackQueryHandler(post_off, pattern="^post_off_"))
         
+        # هندلرهای پیام - ترتیب مهم است!
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_channel_id))
         application.add_handler(MessageHandler(filters.ALL, handle_post_forward))
         
