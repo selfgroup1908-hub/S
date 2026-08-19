@@ -4,6 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, ChatMemberHandler, filters
 import urllib.request
 import re
+import asyncio
 
 # ============ تنظیمات ============
 TOKEN = "8724156247:AAH26WN2k9dlI-K3PFgj665F2r1aGRH4OMw"  # توکن جدید بذار
@@ -23,6 +24,10 @@ waiting_for_channel_id = {}
 # ============ توابع کمکی ============
 def now_tehran():
     return datetime.now(timezone.utc) + TEHRAN_OFFSET
+
+def get_tehran_time_str():
+    """گرفتن زمان ایران به صورت رشته"""
+    return now_tehran().strftime("%H:%M")
 
 def get_chat_type(chat):
     if chat.type == "channel":
@@ -55,6 +60,16 @@ def format_number(num):
         return f"{num:,}".replace(",", ".")
     except:
         return str(num)
+
+def get_chat_title_with_time(chat_title, time_str):
+    """اضافه کردن ساعت به اسم کانال"""
+    # اگر اسم کانال قبلاً ساعت دارد، آن را حذف کن
+    clean_title = re.sub(r'^\d{2}:\d{2}\s*\|\s*', '', chat_title)
+    return f"{time_str} | {clean_title}"
+
+def remove_time_from_title(chat_title):
+    """حذف ساعت از اسم کانال"""
+    return re.sub(r'^\d{2}:\d{2}\s*\|\s*', '', chat_title)
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -150,10 +165,8 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_info = await context.bot.get_chat(channel_id)
         
         if chat_info.type == "channel":
-            # لینک عمومی
             chat_link = f"https://t.me/{chat_info.username}" if chat_info.username else "لینک عمومی ندارد"
             
-            # لینک خصوصی (invite link)
             private_link = "ندارد"
             try:
                 bot_member = await context.bot.get_chat_member(channel_id, context.bot.id)
@@ -167,7 +180,6 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
             
-            # تعداد اعضا
             try:
                 member_count = await context.bot.get_chat_members_count(channel_id)
                 member_count_formatted = format_number(member_count)
@@ -182,29 +194,15 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "username": chat_info.username,
                 "link": chat_link,
                 "private_link": private_link,
-                "description": chat_info.description or "ندارد",
                 "member_count": member_count_formatted,
                 "setup_at": now_tehran().strftime("%Y/%m/%d %H:%M"),
-                "set_by": user_mention(update.effective_user)
+                "set_by": user_mention(update.effective_user),
+                "time_enabled": False,  # ساعت فعال/غیرفعال
+                "original_name": chat_info.title or "بدون نام"
             }
             
-            text = f"""
-<b>✅ کانال با موفقیت تنظیم شد!</b>
-━━━━━━━━━━━━━━
-
-<b>📌 نام:</b> {chat_info.title}
-<b>🆔 آیدی:</b> <code>{channel_id}</code>
-<b>🔗 لینک عمومی:</b> {chat_link}
-<b>🔒 لینک خصوصی:</b> {private_link}
-<b>👥 تعداد اعضا:</b> {member_count_formatted}
-
-ربات الان این کانال رو مدیریت میکنه.
-"""
-            
-            await update.message.reply_text(
-                text,
-                parse_mode='HTML'
-            )
+            # پیام با دکمه‌های ساعت
+            await show_channel_settings(update, context, channel_id, chat_info)
             
             logger.info(f"Channel setup: {chat_info.title} ({channel_id})")
         else:
@@ -291,6 +289,231 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             logger.error(f"Error setting channel {channel_id}: {e}")
 
+# ============ نمایش تنظیمات کانال ============
+async def show_channel_settings(update: Update, context: ContextTypes.DEFAULT_TYPE, channel_id, chat_info):
+    channel_data = channels[str(channel_id)]
+    time_status = "✅ فعال" if channel_data.get("time_enabled", False) else "❌ غیرفعال"
+    
+    text = f"""
+<b>✅ کانال با موفقیت تنظیم شد!</b>
+━━━━━━━━━━━━━━
+
+<b>📌 نام:</b> {chat_info.title}
+<b>🆔 آیدی:</b> <code>{channel_id}</code>
+<b>🔗 لینک عمومی:</b> {channel_data['link']}
+<b>🔒 لینک خصوصی:</b> {channel_data['private_link']}
+<b>👥 تعداد اعضا:</b> {channel_data['member_count']}
+<b>⏰ وضعیت ساعت:</b> {time_status}
+
+ربات الان این کانال رو مدیریت میکنه.
+"""
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("🕐 فعال‌سازی ساعت", callback_data=f"time_on_{channel_id}"),
+            InlineKeyboardButton("🚫 غیرفعال‌سازی ساعت", callback_data=f"time_off_{channel_id}")
+        ],
+        [InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]
+    ]
+    
+    if isinstance(update, Update) and update.callback_query:
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+    else:
+        await update.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+
+# ============ فعال‌سازی ساعت ============
+async def time_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    channel_id = query.data.split("_")[2]
+    
+    if channel_id not in channels:
+        await query.edit_message_text("❌ کانال پیدا نشد!")
+        return
+    
+    channel_data = channels[channel_id]
+    channel_data["time_enabled"] = True
+    
+    # اضافه کردن ساعت به اسم کانال
+    try:
+        current_time = get_tehran_time_str()
+        current_title = channel_data.get("original_name", channel_data["name"])
+        new_title = get_chat_title_with_time(current_title, current_time)
+        
+        await context.bot.set_chat_title(
+            chat_id=channel_id,
+            title=new_title
+        )
+        
+        channel_data["name"] = new_title
+        
+        text = f"""
+<b>✅ ساعت با موفقیت فعال شد!</b>
+━━━━━━━━━━━━━━
+
+<b>🕐 ساعت:</b> {current_time}
+<b>📌 اسم جدید کانال:</b> {new_title}
+
+ساعت به اسم کانال اضافه شد و هر دقیقه آپدیت میشه.
+"""
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🕐 فعال‌سازی ساعت", callback_data=f"time_on_{channel_id}"),
+                InlineKeyboardButton("🚫 غیرفعال‌سازی ساعت", callback_data=f"time_off_{channel_id}")
+            ],
+            [InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]
+        ]
+        
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+        
+        logger.info(f"Time enabled for channel {channel_id}")
+        
+    except Exception as e:
+        await query.edit_message_text(f"❌ خطا: {str(e)[:100]}")
+        logger.error(f"Error enabling time for {channel_id}: {e}")
+
+# ============ غیرفعال‌سازی ساعت ============
+async def time_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    channel_id = query.data.split("_")[2]
+    
+    if channel_id not in channels:
+        await query.edit_message_text("❌ کانال پیدا نشد!")
+        return
+    
+    channel_data = channels[channel_id]
+    channel_data["time_enabled"] = False
+    
+    # حذف ساعت از اسم کانال
+    try:
+        current_title = channel_data.get("original_name", channel_data["name"])
+        clean_title = remove_time_from_title(current_title)
+        
+        await context.bot.set_chat_title(
+            chat_id=channel_id,
+            title=clean_title
+        )
+        
+        channel_data["name"] = clean_title
+        channel_data["original_name"] = clean_title
+        
+        text = f"""
+<b>✅ ساعت با موفقیت غیرفعال شد!</b>
+━━━━━━━━━━━━━━
+
+<b>📌 اسم جدید کانال:</b> {clean_title}
+
+ساعت از اسم کانال حذف شد.
+"""
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🕐 فعال‌سازی ساعت", callback_data=f"time_on_{channel_id}"),
+                InlineKeyboardButton("🚫 غیرفعال‌سازی ساعت", callback_data=f"time_off_{channel_id}")
+            ],
+            [InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]
+        ]
+        
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+        
+        logger.info(f"Time disabled for channel {channel_id}")
+        
+    except Exception as e:
+        await query.edit_message_text(f"❌ خطا: {str(e)[:100]}")
+        logger.error(f"Error disabling time for {channel_id}: {e}")
+
+# ============ تغییر اسم کانال ============
+async def handle_channel_title_change(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تشخیص تغییر اسم کانال و حفظ ساعت"""
+    chat = update.effective_chat
+    chat_id = str(chat.id)
+    
+    if chat_id not in channels:
+        return
+    
+    if not chat.title:
+        return
+    
+    channel_data = channels[chat_id]
+    
+    # بررسی اینکه آیا کاربر اسم رو تغییر داده یا ربات
+    current_title = chat.title
+    clean_title = remove_time_from_title(current_title)
+    
+    # اگر ساعت فعال بود، دوباره به اسم اضافه کن
+    if channel_data.get("time_enabled", False):
+        # بررسی اینکه آیا اسم جدید شامل ساعت هست یا نه
+        if not re.match(r'^\d{2}:\d{2}\s*\|\s*', current_title):
+            # اسم بدون ساعت است، ساعت را اضافه کن
+            time_str = get_tehran_time_str()
+            new_title = get_chat_title_with_time(clean_title, time_str)
+            
+            try:
+                await context.bot.set_chat_title(
+                    chat_id=chat_id,
+                    title=new_title
+                )
+                channel_data["original_name"] = clean_title
+                channel_data["name"] = new_title
+                logger.info(f"Re-added time to channel {chat_id}: {new_title}")
+            except Exception as e:
+                logger.error(f"Error re-adding time to {chat_id}: {e}")
+    else:
+        # ساعت غیرفعال است، فقط اسم اصلی رو ذخیره کن
+        channel_data["original_name"] = clean_title
+        channel_data["name"] = current_title
+
+# ============ به‌روزرسانی ساعت هر دقیقه ============
+async def update_time_every_minute(context: ContextTypes.DEFAULT_TYPE):
+    """به‌روزرسانی ساعت هر دقیقه برای کانال‌های فعال"""
+    current_time = get_tehran_time_str()
+    
+    for channel_id, channel_data in channels.items():
+        if channel_data.get("time_enabled", False):
+            try:
+                # دریافت اسم فعلی کانال
+                chat = await context.bot.get_chat(channel_id)
+                current_title = chat.title or ""
+                
+                # حذف ساعت از اسم فعلی
+                clean_title = remove_time_from_title(current_title)
+                
+                # اسم جدید با ساعت جدید
+                new_title = get_chat_title_with_time(clean_title, current_time)
+                
+                # فقط اگر تغییر کرده باشه آپدیت کن
+                if new_title != current_title:
+                    await context.bot.set_chat_title(
+                        chat_id=channel_id,
+                        title=new_title
+                    )
+                    channel_data["name"] = new_title
+                    channel_data["original_name"] = clean_title
+                    logger.info(f"Updated time for channel {channel_id}: {new_title}")
+                    
+            except Exception as e:
+                logger.error(f"Error updating time for {channel_id}: {e}")
+
 # ============ ورود به کانال/گروه ============
 async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -307,7 +530,6 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
             chat_username = chat.username
             chat_link = f"https://t.me/{chat_username}" if chat_username else "لینک عمومی ندارد"
             
-            # لینک خصوصی
             private_link = "ندارد"
             try:
                 if chat_member.new_chat_member.status == "administrator":
@@ -320,7 +542,6 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
             except:
                 pass
             
-            # تعداد اعضا
             try:
                 member_count = await context.bot.get_chat_members_count(chat_id)
                 member_count_formatted = format_number(member_count)
@@ -413,10 +634,21 @@ def main():
         
         application.add_handler(CallbackQueryHandler(setup_channel, pattern="^setup_channel$"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
+        application.add_handler(CallbackQueryHandler(time_on, pattern="^time_on_"))
+        application.add_handler(CallbackQueryHandler(time_off, pattern="^time_off_"))
         
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_channel_id))
         
         application.add_handler(ChatMemberHandler(chat_member_update, ChatMemberHandler.CHAT_MEMBER))
+        
+        # تغییر اسم کانال
+        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_TITLE, handle_channel_title_change))
+        
+        # Job برای به‌روزرسانی ساعت هر دقیقه
+        job_queue = application.job_queue
+        if job_queue:
+            job_queue.run_repeating(update_time_every_minute, interval=60, first=10)
+            print("✅ ساعت‌شمار فعال شد (هر ۱ دقیقه)")
         
         print("✅ ربات روشن شد!")
         print("💡 برای شروع /start بفرست")
