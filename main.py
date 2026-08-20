@@ -50,12 +50,14 @@ def format_number(num):
     try:
         return f"{num:,}".replace(",", ".")
     except:
-        return str(num)
+        return "0"
 
 def clean_title(title):
-    if not title:
+    if title is None:
         return "بدون نام"
-    return re.sub(r'\s*\d{2}:\d{2}$', '', title)
+    # حذف ساعت از انتهای اسم
+    cleaned = re.sub(r'\s*\d{2}:\d{2}$', '', title)
+    return cleaned.strip() if cleaned.strip() else "بدون نام"
 
 def add_time_to_title(title, time_str):
     clean = clean_title(title)
@@ -230,7 +232,7 @@ async def handle_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             member_count_formatted = "0"
         
-        original_name = chat_info.title or "بدون نام"
+        original_name = chat_info.title if chat_info.title else "بدون نام"
         clean = clean_title(original_name)
         
         # ذخیره کانال
@@ -285,16 +287,16 @@ async def show_channel_settings(update: Update, context: ContextTypes.DEFAULT_TY
     time_status = "✅ فعال" if data.get("time_enabled", False) else "❌ غیرفعال"
     post_status = "✅ فعال" if data.get("post_enabled", False) else "❌ غیرفعال"
     post_text = data.get("post_text", "تنظیم نشده")
-    if len(post_text) > 50:
+    if post_text and len(post_text) > 50:
         post_text = post_text[:50] + "..."
     
     text = f"""
 <b>✅ کانال تنظیم شد!</b>
 ━━━━━━━━━━━━━━
 
-<b>📌 نام:</b> {data['name']}
+<b>📌 نام:</b> {data.get('name', 'بدون نام')}
 <b>🆔 آیدی:</b> <code>{channel_id}</code>
-<b>👥 اعضا:</b> {data['member_count']}
+<b>👥 اعضا:</b> {data.get('member_count', '0')}
 
 <b>⚙️ تنظیمات:</b>
 🕐 ساعت: {time_status}
@@ -393,7 +395,7 @@ async def time_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         current_time = get_tehran_time_str()
-        clean = clean_title(data.get("original_name", data["name"]))
+        clean = clean_title(data.get("original_name", data.get("name", "بدون نام")))
         new_title = add_time_to_title(clean, current_time)
         
         await context.bot.set_chat_title(chat_id=channel_id, title=new_title)
@@ -417,7 +419,7 @@ async def time_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data["time_enabled"] = False
     
     try:
-        clean = clean_title(data.get("original_name", data["name"]))
+        clean = clean_title(data.get("original_name", data.get("name", "بدون نام")))
         await context.bot.set_chat_title(chat_id=channel_id, title=clean)
         data["name"] = clean
         data["original_name"] = clean
@@ -462,16 +464,16 @@ async def show_channel_settings_from_callback(update: Update, context: ContextTy
     time_status = "✅ فعال" if data.get("time_enabled", False) else "❌ غیرفعال"
     post_status = "✅ فعال" if data.get("post_enabled", False) else "❌ غیرفعال"
     post_text = data.get("post_text", "تنظیم نشده")
-    if len(post_text) > 50:
+    if post_text and len(post_text) > 50:
         post_text = post_text[:50] + "..."
     
     text = f"""
 <b>⚙️ تنظیمات کانال</b>
 ━━━━━━━━━━━━━━
 
-<b>📌 نام:</b> {data['name']}
+<b>📌 نام:</b> {data.get('name', 'بدون نام')}
 <b>🆔 آیدی:</b> <code>{channel_id}</code>
-<b>👥 اعضا:</b> {data['member_count']}
+<b>👥 اعضا:</b> {data.get('member_count', '0')}
 
 🕐 ساعت: {time_status}
 📝 پست: {post_status}
@@ -538,7 +540,7 @@ async def update_time_every_minute(context: ContextTypes.DEFAULT_TYPE):
             if data.get("time_enabled", False):
                 try:
                     chat = await context.bot.get_chat(channel_id)
-                    current_title = chat.title or ""
+                    current_title = chat.title if chat.title else "بدون نام"
                     clean = clean_title(current_title)
                     new_title = add_time_to_title(clean, current_time)
                     
@@ -561,7 +563,7 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if chat_member.new_chat_member.status in ["member", "administrator"]:
             chat = update.effective_chat
             chat_id = chat.id
-            chat_title = chat.title or "بدون نام"
+            chat_title = chat.title if chat.title else "بدون نام"
             chat_link = f"https://t.me/{chat.username}" if chat.username else "لینک عمومی ندارد"
             
             try:
