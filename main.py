@@ -1,3 +1,4 @@
+```python
 import logging
 import re
 import asyncio
@@ -1161,19 +1162,11 @@ def main():
         
         application = Application.builder().token(TOKEN).build()
         
-        # هندلرهای دکمه‌ها (خارج از ConversationHandler)
-        application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
-        application.add_handler(CallbackQueryHandler(manual_ad, pattern="^manual_ad$"))
-        application.add_handler(CallbackQueryHandler(auto_ad, pattern="^auto_ad$"))
-        application.add_handler(CallbackQueryHandler(show_owners, pattern="^show_owners$"))
-        application.add_handler(CallbackQueryHandler(no_more_links, pattern="^no_more_links$"))
-        application.add_handler(CallbackQueryHandler(list_tabchis, pattern="^list_tabchis$"))
-        application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
-        application.add_handler(CommandHandler("start", start))
-        
-        # ConversationHandler فقط برای دریافت پیام‌ها
+        # ConversationHandler با entry_points
         conv_handler = ConversationHandler(
-            entry_points=[],
+            entry_points=[
+                CallbackQueryHandler(new_session, pattern="^new_session$"),
+            ],
             states={
                 WAITING_FOR_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
                 WAITING_FOR_API_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_api_id)],
@@ -1185,12 +1178,21 @@ def main():
             },
             fallbacks=[
                 CommandHandler("cancel", cancel),
+                CallbackQueryHandler(back_to_menu, pattern="^back$"),
             ],
             name="main_handler",
             persistent=False
         )
         
         application.add_handler(conv_handler)
+        
+        # هندلرهای دکمه‌های دیگه (خارج از ConversationHandler)
+        application.add_handler(CallbackQueryHandler(manual_ad, pattern="^manual_ad$"))
+        application.add_handler(CallbackQueryHandler(auto_ad, pattern="^auto_ad$"))
+        application.add_handler(CallbackQueryHandler(show_owners, pattern="^show_owners$"))
+        application.add_handler(CallbackQueryHandler(no_more_links, pattern="^no_more_links$"))
+        application.add_handler(CallbackQueryHandler(list_tabchis, pattern="^list_tabchis$"))
+        application.add_handler(CommandHandler("start", start))
         
         print("✅ ربات روشن شد!")
         print("💡 برای شروع /start بفرست")
@@ -1203,3 +1205,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
