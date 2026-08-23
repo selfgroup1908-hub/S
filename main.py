@@ -31,8 +31,8 @@ WAITING_FOR_AUTO_AD = 8
 
 user_sessions = {}
 user_messages = {}
-tabchi_data = {}  # {"user_id": [{"session": "...", "phone": "...", "active": True}]}
-ad_data = {}  # {"user_id": {"links": [], "text": "", "tabchi": None}}
+tabchi_data = {}
+ad_data = {}
 
 # ============ فایل ذخیره اطلاعات ============
 DATA_FILE = "tabchis.json"
@@ -80,9 +80,6 @@ def mask_string(s, show=5):
         return s
     return s[:show] + "..." + s[-3:]
 
-def get_user_key(user_id):
-    return str(user_id)
-
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
     user = update.effective_user
@@ -92,25 +89,33 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
     tabchi_count = len(tabchi_data.get(user_id, []))
     
     text = f"""
-<b>🤖 ربات تبلیغاتی حرفه‌ای</b>
-━━━━━━━━━━━━━━━━━━━
+🔥 <b>ربات سلطان تبلیغات</b> 🔥
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-<b>سلام</b> {mention} 👋
+👑 <b>سلام</b> {mention} عزیز!
 
-به ربات <b>تبلیغات خودکار</b> خوش اومدی!
+به <b>قدرتمندترین</b> ربات تبلیغاتی تلگرام خوش اومدی! 🚀
 
-<b>📊 وضعیت شما:</b>
-• <b>تعداد تبچی‌ها:</b> {tabchi_count}
+📊 <b>آمار شما:</b>
+┏━━━━━━━━━━━━━━━━━━━┓
+┃ 👤 تبچی‌ها: <b>{tabchi_count}</b>
+┗━━━━━━━━━━━━━━━━━━━┛
 
-<b>⚡️ منوی اصلی:</b>
+⚡️ <b>منوی فرماندهی:</b>
 """
     
     keyboard = [
         [InlineKeyboardButton("🔑 ساخت تبچی جدید", callback_data="new_session")],
-        [InlineKeyboardButton("📋 لیست تبچی‌ها", callback_data="list_tabchis")],
-        [InlineKeyboardButton("📢 تبلیغ دستی", callback_data="manual_ad")],
-        [InlineKeyboardButton("🤖 تبلیغ خودکار", callback_data="auto_ad")],
-        [InlineKeyboardButton("👑 نمایش مالکین گروه‌ها", callback_data="show_owners")]
+        [
+            InlineKeyboardButton("📋 لیست تبچی‌ها", callback_data="list_tabchis"),
+            InlineKeyboardButton("📢 تبلیغ دستی", callback_data="manual_ad")
+        ],
+        [
+            InlineKeyboardButton("🤖 تبلیغ خودکار", callback_data="auto_ad")
+        ],
+        [
+            InlineKeyboardButton("👑 نمایش مالکین گروه‌ها", callback_data="show_owners")
+        ]
     ]
     
     if edit and update.callback_query:
@@ -119,7 +124,7 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
-        await update.callback_query.answer("🔙 برگشتی به منو!")
+        await update.callback_query.answer("🔙 بازگشت به منوی اصلی ✅")
     else:
         msg = await update.message.reply_text(
             text,
@@ -128,23 +133,21 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
         )
         user_messages[user.id] = msg.message_id
 
-# ============ تبلیغ خودکار (در دست ساخت) ============
+# ============ تبلیغ خودکار ============
 async def auto_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     text = """
-<b>🤖 تبلیغ خودکار</b>
-━━━━━━━━━━━━━━━━━━━
+🤖 <b>تبلیغ خودکار</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔧 <b>این بخش در دست ساخت است!</b>
+🔧 <b>در دست ساخت...</b>
 
-به زودی اضافه میشه...
-
-✅ قابلیت‌های آینده:
-• زمان‌بندی خودکار
-• ارسال در زمان‌های مشخص
-• مدیریت چندین کمپین
+✨ <b>قابلیت‌های آینده:</b>
+• ⏰ زمان‌بندی هوشمند
+• 📊 مدیریت کمپین‌ها
+• 🎯 هدف‌گیری دقیق
 
 🔙 به منوی اصلی برگرد.
 """
@@ -168,26 +171,25 @@ async def show_owners(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not active_tabchis:
         text = """
-<b>👑 نمایش مالکین گروه‌ها</b>
-━━━━━━━━━━━━━━━━━━━
+👑 <b>نمایش مالکین گروه‌ها</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-❌ شما <b>هیچ تبچی فعالی</b> ندارید!
+❌ <b>هیچ تبچی فعالی ندارید!</b>
 
-اول از گزینه <b>ساخت تبچی جدید</b> استفاده کن.
+🔑 اول یه تبچی بساز!
 """
         keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         return
     
     text = """
-<b>👑 نمایش مالکین گروه‌ها</b>
-━━━━━━━━━━━━━━━━━━━
+👑 <b>نمایش مالکین گروه‌ها</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-⏳ در حال بررسی گروه‌ها...
+⏳ <b>لینک گروه</b> رو بفرست...
 
-لطفاً <b>لینک گروه</b> مورد نظر را بفرستید.
-
-<b>مثال:</b> <code>https://t.me/your_group</code>
+📌 مثال:
+<code>https://t.me/your_group</code>
 """
     
     keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
@@ -198,7 +200,6 @@ async def show_owners(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
     
-    # ذخیره وضعیت برای دریافت لینک گروه
     ad_data[query.from_user.id] = {"mode": "owner_check"}
     
     return WAITING_FOR_GROUP_LINK
@@ -214,32 +215,32 @@ async def manual_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not active_tabchis:
         text = """
-<b>📢 تبلیغ دستی</b>
-━━━━━━━━━━━━━━━━━━━
+📢 <b>تبلیغ دستی</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-❌ شما <b>هیچ تبچی فعالی</b> ندارید!
+❌ <b>هیچ تبچی فعالی ندارید!</b>
 
-اول از گزینه <b>ساخت تبچی جدید</b> استفاده کن.
+🔑 اول یه تبچی بساز!
 """
         keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         return
     
     text = """
-<b>📢 تبلیغ دستی</b>
-━━━━━━━━━━━━━━━━━━━
+📢 <b>تبلیغ دستی</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-<b>مرحله ۱:</b> لطفاً <b>لینک گروه</b> مورد نظر را بفرستید.
+<b>مرحله ۱:</b> لینک گروه رو بفرست.
 
-📌 <b>مثال:</b>
+📌 مثال:
 <code>https://t.me/your_group</code>
 
-اگر لینک دیگری داری، دوباره بفرست.
-وقتی تمام شد، روی دکمه <b>لینک ندارم</b> کلیک کن.
+🔄 می‌تونی چندتا لینک بفرستی.
+✅ وقتی تموم شد، دکمه پایین رو بزن.
 """
     
     keyboard = [
-        [InlineKeyboardButton("✅ لینک ندارم، برو مرحله بعد", callback_data="no_more_links")]
+        [InlineKeyboardButton("✅ تموم شد، برو مرحله بعد", callback_data="no_more_links")]
     ]
     
     await query.edit_message_text(
@@ -248,7 +249,6 @@ async def manual_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
     
-    # ذخیره وضعیت
     if query.from_user.id not in ad_data:
         ad_data[query.from_user.id] = {"links": [], "text": "", "mode": "manual_ad"}
     
@@ -263,34 +263,31 @@ async def get_group_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ لطفاً از منو شروع کن!", parse_mode='HTML')
         return ConversationHandler.END
     
-    # بررسی لینک
     if not text.startswith("https://t.me/") and not text.startswith("t.me/"):
         msg = await update.message.reply_text(
             "❌ لینک نامعتبر!\n\n"
-            "لطفاً یک لینک معتبر از گروه تلگرام بفرست:\n"
+            "لینک معتبر بفرست:\n"
             "<b>مثال:</b> <code>https://t.me/your_group</code>",
             parse_mode='HTML'
         )
         user_messages[user_id] = msg.message_id
         return WAITING_FOR_GROUP_LINK
     
-    # اضافه کردن لینک
     ad_data[user_id]["links"].append(text)
     
     text = f"""
-<b>✅ لینک دریافت شد!</b>
-━━━━━━━━━━━━━━━━━━━
+✅ <b>لینک دریافت شد!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔗 <b>لینک:</b> {text}
+🔗 {text}
 
-لینک به لیست اضافه شد.
+📊 <b>تعداد لینک‌ها:</b> {len(ad_data[user_id]['links'])}
 
-اگر لینک دیگری داری، بفرست.
-در غیر اینصورت روی دکمه <b>لینک ندارم</b> کلیک کن.
+🔄 لینک بعدی رو بفرست یا دکمه زیر رو بزن.
 """
     
     keyboard = [
-        [InlineKeyboardButton("✅ لینک ندارم، برو مرحله بعد", callback_data="no_more_links")]
+        [InlineKeyboardButton("✅ تموم شد، برو مرحله بعد", callback_data="no_more_links")]
     ]
     
     msg = await update.message.reply_text(
@@ -310,33 +307,33 @@ async def no_more_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     
     if user_id not in ad_data:
-        await query.edit_message_text("❌ خطا! لطفاً دوباره شروع کن.", parse_mode='HTML')
+        await query.edit_message_text("❌ خطا! دوباره شروع کن.", parse_mode='HTML')
         return ConversationHandler.END
     
     links = ad_data[user_id].get("links", [])
     
     if not links:
         text = """
-<b>❌ هیچ لینکی وارد نشده!</b>
-━━━━━━━━━━━━━━━━━━━
+❌ <b>هیچ لینکی وارد نشده!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-لطفاً حداقل یک لینک گروه بفرست.
+حداقل یه لینک گروه بفرست.
 """
         keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         return ConversationHandler.END
     
     text = f"""
-<b>✅ {len(links)} لینک ذخیره شد!</b>
-━━━━━━━━━━━━━━━━━━━
+✅ <b>{len(links)} لینک ذخیره شد!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🔗 <b>لینک‌ها:</b>
 {chr(10).join([f'• {l}' for l in links])}
 
-━━━━━━━━━━━━━━━━━━━
-<b>مرحله ۲:</b> لطفاً <b>متن تبلیغی</b> خود را بفرستید.
+━━━━━━━━━━━━━━━━━━━━━━━━━
+<b>مرحله ۲:</b> متن تبلیغی رو بفرست.
 
-این متن در همه گروه‌ها ارسال میشه.
+📝 هرچی دوست داری توی گروه‌ها بفرستی...
 """
     
     keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
@@ -363,7 +360,7 @@ async def get_ad_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         msg = await update.message.reply_text(
             "❌ متن نمی‌تونه خالی باشه!\n\n"
-            "لطفاً متن تبلیغی خود را بفرست:",
+            "متن تبلیغی رو بفرست:",
             parse_mode='HTML'
         )
         user_messages[user_id] = msg.message_id
@@ -371,7 +368,6 @@ async def get_ad_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     ad_data[user_id]["text"] = text
     
-    # شروع تبلیغ
     await start_manual_advertising(update, context, user_id)
     
     return ConversationHandler.END
@@ -402,14 +398,18 @@ async def start_manual_advertising(update: Update, context: ContextTypes.DEFAULT
     
     await update.message.reply_text(
         f"""
-<b>🚀 شروع تبلیغ دستی...</b>
-━━━━━━━━━━━━━━━━━━━
+🚀 <b>شروع تبلیغ دستی...</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📊 <b>تعداد تبچی‌ها:</b> {len(active_tabchis)}
-🔗 <b>تعداد گروه‌ها:</b> {len(links)}
-📝 <b>متن تبلیغ:</b> {ad_text[:100]}{'...' if len(ad_text) > 100 else ''}
+📊 <b>آمار:</b>
+┏━━━━━━━━━━━━━━━━━━━┓
+┃ 👤 تبچی‌ها: {len(active_tabchis)}
+┃ 🔗 گروه‌ها: {len(links)}
+┗━━━━━━━━━━━━━━━━━━━┛
 
-ربات در حال ارسال پیام به گروه‌هاست...
+📝 <b>متن:</b> {ad_text[:100]}{'...' if len(ad_text) > 100 else ''}
+
+⏳ در حال ارسال...
 """,
         parse_mode='HTML'
     )
@@ -417,7 +417,6 @@ async def start_manual_advertising(update: Update, context: ContextTypes.DEFAULT
     success_count = 0
     fail_count = 0
     
-    # برای هر تبچی
     for tabchi in active_tabchis:
         try:
             session_str = tabchi.get('session')
@@ -435,18 +434,13 @@ async def start_manual_advertising(update: Update, context: ContextTypes.DEFAULT
                 )
                 continue
             
-            # برای هر لینک
             for link in links:
                 try:
-                    # جوین شدن در گروه
                     group = await client.get_entity(link)
                     await client.join_channel(group)
-                    
-                    # ارسال پیام
                     await client.send_message(group, ad_text)
                     success_count += 1
-                    
-                    await asyncio.sleep(3)  # تاخیر بین ارسال‌ها
+                    await asyncio.sleep(3)
                     
                 except Exception as e:
                     fail_count += 1
@@ -457,20 +451,21 @@ async def start_manual_advertising(update: Update, context: ContextTypes.DEFAULT
         except Exception as e:
             logger.error(f"Error with tabchi: {e}")
     
-    # پاک کردن اطلاعات
     if user_id in ad_data:
         del ad_data[user_id]
     
     await update.message.reply_text(
         f"""
-<b>✅ تبلیغ با موفقیت انجام شد!</b>
-━━━━━━━━━━━━━━━━━━━
+✅ <b>تبلیغ با موفقیت انجام شد!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📊 <b>نتیجه:</b>
-• ✅ موفق: {success_count}
-• ❌ ناموفق: {fail_count}
+📊 <b>نتیجه نهایی:</b>
+┏━━━━━━━━━━━━━━━━━━━┓
+┃ ✅ موفق: {success_count}
+┃ ❌ ناموفق: {fail_count}
+┗━━━━━━━━━━━━━━━━━━━┛
 
-برای تبلیغ جدید از منو استفاده کن.
+🔥 برای تبلیغ جدید از منو استفاده کن!
 """,
         parse_mode='HTML'
     )
@@ -487,7 +482,7 @@ async def show_group_owners(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not link.startswith("https://t.me/") and not link.startswith("t.me/"):
         msg = await update.message.reply_text(
             "❌ لینک نامعتبر!\n\n"
-            "لطفاً یک لینک معتبر از گروه تلگرام بفرست:",
+            "لینک معتبر بفرست:",
             parse_mode='HTML'
         )
         user_messages[user_id] = msg.message_id
@@ -524,11 +519,8 @@ async def show_group_owners(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 continue
             
             try:
-                # گرفتن اطلاعات گروه
                 group = await client.get_entity(link)
-                
-                # گرفتن لیست ادمین‌ها
-                admins = await client.get_participants(group, filter=0)  # 0 = admin
+                admins = await client.get_participants(group, filter=0)
                 
                 for admin in admins:
                     if admin.participant.is_creator:
@@ -553,28 +545,31 @@ async def show_group_owners(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if owners:
         text = f"""
-<b>👑 مالکین گروه</b>
-━━━━━━━━━━━━━━━━━━━
+👑 <b>مالکین گروه</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔗 <b>لینک گروه:</b> {link}
+🔗 <b>لینک:</b> {link}
 
 <b>مالکین پیدا شده:</b>
 """
         for owner in owners:
-            text += f"\n👤 <b>نام:</b> {owner['name']}\n"
-            text += f"🆔 <b>آیدی:</b> <code>{owner['id']}</code>\n"
-            text += f"📱 <b>تبچی:</b> {owner['phone']}\n"
-            text += "━━━━━━━━━━━━━━━━━━━\n"
+            text += f"""
+┏━━━━━━━━━━━━━━━━━━━┓
+┃ 👤 {owner['name']}
+┃ 🆔 <code>{owner['id']}</code>
+┃ 📱 {owner['phone']}
+┗━━━━━━━━━━━━━━━━━━━┛
+"""
     else:
         text = f"""
-<b>👑 مالکین گروه</b>
-━━━━━━━━━━━━━━━━━━━
+👑 <b>مالکین گروه</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔗 <b>لینک گروه:</b> {link}
+🔗 <b>لینک:</b> {link}
 
 ❌ <b>هیچ مالکی پیدا نشد!</b>
 
-ممکن است گروه خصوصی باشد یا تبچی‌ها معتبر نباشند.
+ممکنه گروه خصوصی باشه یا تبچی‌ها معتبر نباشن.
 """
     
     keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
@@ -599,10 +594,10 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id] = {}
     
     text = """
-<b>🔑 ساخت تبچی جدید</b>
-━━━━━━━━━━━━━━━━━━━
+🔑 <b>ساخت تبچی جدید</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-<b>مرحله ۱:</b> لطفاً <b>شماره تلفن</b> خودت رو وارد کن.
+<b>مرحله ۱:</b> شماره تلفن رو وارد کن.
 
 📱 <b>مثال:</b> <code>989123456789</code>
 (با کد کشور، بدون +)
@@ -631,8 +626,8 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not is_valid_phone(phone):
         msg = await update.message.reply_text(
-            "❌ شماره تلفن نامعتبره!\n\n"
-            "لطفاً با کد کشور وارد کن:\n"
+            "❌ شماره نامعتبر!\n\n"
+            "با کد کشور وارد کن:\n"
             "<b>مثال:</b> <code>989123456789</code>",
             parse_mode='HTML'
         )
@@ -642,15 +637,15 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['phone'] = phone
     
     text = f"""
-<b>✅ شماره تلفن ذخیره شد!</b>
-━━━━━━━━━━━━━━━━━━━
+✅ <b>شماره ذخیره شد!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📱 <b>شماره:</b> <code>{phone}</code>
 
-━━━━━━━━━━━━━━━━━━━
-<b>مرحله ۲:</b> لطفاً <b>API ID</b> خودت رو وارد کن.
+━━━━━━━━━━━━━━━━━━━━━━━━━
+<b>مرحله ۲:</b> API ID رو وارد کن.
 
-🔑 از <a href="https://my.telegram.org">my.telegram.org</a> بگیرش.
+🔑 از <a href="https://my.telegram.org">my.telegram.org</a> بگیر.
 """
     
     keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
@@ -677,7 +672,7 @@ async def get_api_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_valid_api_id(text):
         msg = await update.message.reply_text(
             "❌ API ID باید عدد باشه!\n\n"
-            "لطفاً دوباره وارد کن:",
+            "دوباره وارد کن:",
             parse_mode='HTML'
         )
         user_messages[user_id] = msg.message_id
@@ -686,15 +681,15 @@ async def get_api_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['api_id'] = int(text)
     
     text = f"""
-<b>✅ API ID ذخیره شد!</b>
-━━━━━━━━━━━━━━━━━━━
+✅ <b>API ID ذخیره شد!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🔑 <b>API ID:</b> <code>{text}</code>
 
-━━━━━━━━━━━━━━━━━━━
-<b>مرحله ۳:</b> لطفاً <b>API Hash</b> خودت رو وارد کن.
+━━━━━━━━━━━━━━━━━━━━━━━━━
+<b>مرحله ۳:</b> API Hash رو وارد کن.
 
-🔐 از <a href="https://my.telegram.org">my.telegram.org</a> بگیرش.
+🔐 از <a href="https://my.telegram.org">my.telegram.org</a> بگیر.
 """
     
     keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
@@ -720,8 +715,8 @@ async def get_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not is_valid_api_hash(text):
         msg = await update.message.reply_text(
-            "❌ API Hash نامعتبره! (حداقل ۳۰ کاراکتر)\n\n"
-            "لطفاً دوباره وارد کن:",
+            "❌ API Hash نامعتبر! (حداقل ۳۰ کاراکتر)\n\n"
+            "دوباره وارد کن:",
             parse_mode='HTML'
         )
         user_messages[user_id] = msg.message_id
@@ -730,7 +725,7 @@ async def get_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['api_hash'] = text
     
     msg = await update.message.reply_text(
-        "⏳ در حال ارسال کد به شماره شما...",
+        "⏳ در حال ارسال کد...",
         parse_mode='HTML'
     )
     user_messages[user_id] = msg.message_id
@@ -754,12 +749,12 @@ async def get_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_sessions[user_id]['session_name'] = session_name
         
         text = f"""
-<b>✅ کد تایید ارسال شد!</b>
-━━━━━━━━━━━━━━━━━━━
+✅ <b>کد تایید ارسال شد!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📩 کد ۵ رقمی به شماره <code>{phone}</code> ارسال شد.
+📩 کد ۵ رقمی به <code>{phone}</code> ارسال شد.
 
-لطفاً کد رو وارد کن:
+کد رو وارد کن:
 <b>مثال:</b> <code>12345</code> یا <code>1.2.3.4.5</code>
 """
         
@@ -813,7 +808,7 @@ async def get_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         client = data.get('client')
         if not client:
             await update.message.reply_text(
-                "❌ اتصال معتبر نیست! لطفاً دوباره شروع کن.",
+                "❌ اتصال معتبر نیست! دوباره شروع کن.",
                 parse_mode='HTML'
             )
             return ConversationHandler.END
@@ -849,13 +844,13 @@ async def get_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_data()
             
             result_text = f"""
-<b>✅ تبچی با موفقیت ساخته شد!</b>
-━━━━━━━━━━━━━━━━━━━
+✅ <b>تبچی ساخته شد!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-<b>📱 شماره:</b> <code>{phone}</code>
-<b>🔑 سشن:</b> <code>{mask_string(session_string, 10)}</code>
+📱 <b>شماره:</b> <code>{phone}</code>
+🔑 <b>سشن:</b> <code>{mask_string(session_string, 10)}</code>
 
-تبچی به لیست شما اضافه شد.
+🔥 تبچی به لیست اضافه شد!
 """
             
             keyboard = [
@@ -897,14 +892,14 @@ async def get_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await client.send_code_request(phone)
             
             text = f"""
-<b>🔄 کد جدید ارسال شد!</b>
-━━━━━━━━━━━━━━━━━━━
+🔄 <b>کد جدید ارسال شد!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
 کد قبلی <b>منقضی</b> شده بود.
 
-📩 کد جدید به شماره <code>{phone}</code> ارسال شد.
+📩 کد جدید به <code>{phone}</code> ارسال شد.
 
-لطفاً کد جدید رو وارد کن:
+کد جدید رو وارد کن:
 """
             
             keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
@@ -920,12 +915,12 @@ async def get_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         except SessionPasswordNeededError:
             text = f"""
-<b>🔐 نیاز به پسورد دو مرحله‌ای!</b>
-━━━━━━━━━━━━━━━━━━━
+🔐 <b>نیاز به پسورد دو مرحله‌ای!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-اکانت شما <b>پسورد دو مرحله‌ای</b> دارد.
+اکانتت <b>پسورد دو مرحله‌ای</b> داره.
 
-لطفاً پسورد خود را وارد کن:
+پسورد رو وارد کن:
 """
             
             keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
@@ -968,7 +963,7 @@ async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         client = data.get('client')
         if not client:
             await update.message.reply_text(
-                "❌ اتصال معتبر نیست! لطفاً دوباره شروع کن.",
+                "❌ اتصال معتبر نیست! دوباره شروع کن.",
                 parse_mode='HTML'
             )
             return ConversationHandler.END
@@ -999,13 +994,13 @@ async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_data()
         
         result_text = f"""
-<b>✅ تبچی با موفقیت ساخته شد!</b>
-━━━━━━━━━━━━━━━━━━━
+✅ <b>تبچی ساخته شد!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-<b>📱 شماره:</b> <code>{data['phone']}</code>
-<b>🔑 سشن:</b> <code>{mask_string(session_string, 10)}</code>
+📱 <b>شماره:</b> <code>{data['phone']}</code>
+🔑 <b>سشن:</b> <code>{mask_string(session_string, 10)}</code>
 
-تبچی به لیست شما اضافه شد.
+🔥 تبچی به لیست اضافه شد!
 """
         
         keyboard = [
@@ -1045,8 +1040,8 @@ async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         msg = await update.message.reply_text(
-            f"❌ پسورد اشتباه است! {str(e)[:100]}\n\n"
-            "لطفاً دوباره پسورد رو وارد کن:",
+            f"❌ پسورد اشتباه! {str(e)[:100]}\n\n"
+            "دوباره پسورد رو وارد کن:",
             parse_mode='HTML'
         )
         user_messages[user_id] = msg.message_id
@@ -1062,17 +1057,17 @@ async def list_tabchis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not tabchis:
         text = """
-<b>📋 لیست تبچی‌ها</b>
-━━━━━━━━━━━━━━━━━━━
+📋 <b>لیست تبچی‌ها</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-<i>هیچ تبچی‌ای ندارید!</i>
+<i>هیچ تبچی‌ای نداری!</i>
 
-برای ساخت تبچی از گزینه <b>ساخت تبچی جدید</b> استفاده کن.
+🔑 از گزینه <b>ساخت تبچی جدید</b> استفاده کن.
 """
     else:
         text = f"""
-<b>📋 لیست تبچی‌ها ({len(tabchis)})</b>
-━━━━━━━━━━━━━━━━━━━
+📋 <b>لیست تبچی‌ها ({len(tabchis)})</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
         for i, tabchi in enumerate(tabchis, 1):
@@ -1148,7 +1143,7 @@ def main():
         delete_webhook()
         
         print("=" * 60)
-        print("🚀 ربات تبلیغاتی حرفه‌ای")
+        print("🔥 ربات سلطان تبلیغات")
         print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
