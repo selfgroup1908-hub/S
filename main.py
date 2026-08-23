@@ -3,8 +3,8 @@ import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters, ConversationHandler
 import urllib.request
-import random
-import string
+import asyncio
+import os
 
 # ============ تنظیمات ============
 TOKEN = "8954675509:AAGkdKpnKjoPPf-irMnCHZyswmqJCoIruiI"
@@ -21,6 +21,7 @@ WAITING_FOR_API_ID = 2
 WAITING_FOR_API_HASH = 3
 WAITING_FOR_CODE = 4
 WAITING_FOR_PASSWORD = 5
+WAITING_FOR_SESSION = 6
 
 # دیکشنری برای ذخیره اطلاعات موقت کاربران
 user_sessions = {}
@@ -47,22 +48,61 @@ def is_valid_api_hash(text):
 def mask_password(password):
     return "*" * len(password)
 
-def generate_session(api_id, api_hash, phone, code, password=None):
-    """ساخت سشن واقعی"""
-    import hashlib
-    import base64
-    
-    # ترکیب اطلاعات برای ساخت سشن
-    raw = f"{api_id}|{api_hash}|{phone}|{code}|{password if password else 'none'}"
-    
-    # هش کردن با SHA256
-    hash_obj = hashlib.sha256(raw.encode())
-    hash_bytes = hash_obj.digest()
-    
-    # تبدیل به base64
-    session = base64.b64encode(hash_bytes).decode('utf-8')
-    
-    return session
+# ============ ساخت سشن واقعی با Telethon ============
+async def create_real_session(api_id, api_hash, phone, code, password=None):
+    """ساخت سشن واقعی با Telethon"""
+    try:
+        from telethon import TelegramClient
+        from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
+        
+        # ایجاد کلاینت موقت
+        session_name = f"session_{phone}_{api_id}"
+        client = TelegramClient(session_name, api_id, api_hash)
+        
+        await client.connect()
+        
+        # ارسال کد
+        if not await client.is_user_authorized():
+            try:
+                await client.send_code_request(phone)
+            except Exception as e:
+                return {"error": f"خطا در ارسال کد: {str(e)}"}
+            
+            # وارد کردن کد
+            try:
+                await client.sign_in(phone, code)
+            except PhoneCodeInvalidError:
+                return {"error": "کد وارد شده اشتباه است!"}
+            except SessionPasswordNeededError:
+                # نیاز به پسورد دو مرحله‌ای
+                if password:
+                    try:
+                        await client.sign_in(password=password)
+                    except Exception as e:
+                        return {"error": f"پسورد اشتباه است! {str(e)}"}
+                else:
+                    return {"error": "نیاز به پسورد دو مرحله‌ای دارید! /skip رو بزنید و پسورد رو وارد کنید."}
+            except Exception as e:
+                return {"error": f"خطا: {str(e)}"}
+        
+        # گرفتن سشن استرینگ
+        session_string = client.session.save()
+        
+        # بستن کلاینت
+        await client.disconnect()
+        
+        # حذف فایل سشن
+        try:
+            os.remove(f"{session_name}.session")
+        except:
+            pass
+        
+        return {"session": session_string}
+        
+    except ImportError:
+        return {"error": "کتابخانه Telethon نصب نیست! pip install telethon"}
+    except Exception as e:
+        return {"error": f"خطا: {str(e)}"}
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -70,21 +110,21 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
     mention = f"@{user.username}" if user.username else user.first_name
     
     text = f"""
-<b>🤖 ربات ابچی‌ساز حرفه‌ای</b>
+<b>🤖 ربات سشن‌ساز حرفه‌ای</b>
 ━━━━━━━━━━━━━━━━━━━
 
 <b>سلام</b> {mention} 👋
 
-به ربات <b>ابچی‌ساز</b> خوش اومدی!
+به ربات <b>سشن‌ساز</b> خوش اومدی!
 
-اینجا می‌تونی <b>ابچی (سشن)</b> تلگرام بسازی.
+اینجا می‌تونی <b>سشن تلگرام</b> واقعی بسازی.
 
 <b>⚡️ برای شروع روی دکمه زیر کلیک کن:</b>
 """
     
     keyboard = [
-        [InlineKeyboardButton("🔑 ساخت ابچی جدید", callback_data="new_session")],
-        [InlineKeyboardButton("❓ راهنمای ساخت ابچی", callback_data="help")]
+        [InlineKeyboardButton("🔑 ساخت سشن جدید", callback_data="new_session")],
+        [InlineKeyboardButton("❓ راهنما", callback_data="help")]
     ]
     
     if edit:
@@ -107,14 +147,14 @@ async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     text = """
-<b>📖 راهنمای ساخت ابچی</b>
+<b>📖 راهنمای ساخت سشن</b>
 ━━━━━━━━━━━━━━━━━━━
 
-<b>🔹 مراحل ساخت ابچی:</b>
+<b>🔹 مراحل:</b>
 
 ۱. <b>شماره تلفن</b> رو وارد کن (با کد کشور)
-۲. <b>API ID</b> رو از <a href="https://my.telegram.org">my.telegram.org</a> بگیر
-۳. <b>API Hash</b> رو از همین سایت بگیر
+۲. <b>API ID</b> رو از my.telegram.org بگیر
+۳. <b>API Hash</b> رو از my.telegram.org بگیر
 ۴. <b>کد تایید</b> که از تلگرام میاد رو وارد کن
 ۵. اگر <b>پسورد دو مرحله‌ای</b> داری، وارد کن
 
@@ -122,9 +162,7 @@ async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • شماره رو با کد کشور وارد کن
 • مثال: <code>989123456789</code>
 • اطلاعاتت ذخیره نمیشه!
-
-<b>🔑 ابچی یعنی چی؟</b>
-ابچی همون سشن تلگرامه که برای اتصال به اکانت استفاده میشه.
+• سشن واقعی و معتبر ساخته میشه
 """
     
     keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
@@ -136,18 +174,17 @@ async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=True
     )
 
-# ============ شروع ساخت ابچی ============
+# ============ شروع ساخت سشن ============
 async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     user_id = query.from_user.id
     
-    # پاک کردن اطلاعات قبلی
     user_sessions[user_id] = {}
     
     text = """
-<b>🔑 ساخت ابچی جدید</b>
+<b>🔑 ساخت سشن جدید</b>
 ━━━━━━━━━━━━━━━━━━━
 
 <b>مرحله ۱:</b> لطفاً <b>شماره تلفن</b> خودت رو وارد کن.
@@ -168,7 +205,7 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     return WAITING_FOR_PHONE
 
-# ============ دریافت شماره تلفن ============
+# ============ دریافت شماره ============
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
@@ -270,7 +307,7 @@ async def get_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not is_valid_api_hash(text):
         await update.message.reply_text(
-            "❌ API Hash نامعتبره! (حداقل ۳۰ کاراکتر باید باشه)\n\n"
+            "❌ API Hash نامعتبره! (حداقل ۳۰ کاراکتر)\n\n"
             "لطفاً دوباره وارد کن:",
             parse_mode='HTML'
         )
@@ -285,22 +322,80 @@ async def get_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🔐 <b>API Hash:</b> <code>{text[:10]}...{text[-5:]}</code>
 
 ━━━━━━━━━━━━━━━━━━━
-<b>مرحله ۴:</b> حالا <b>کد تایید</b> رو از تلگرام دریافت کن.
+<b>مرحله ۴:</b> در حال ارسال کد به شماره شما...
 
-📩 کد ۵ رقمی رو که برات میاد، وارد کن:
+📩 منتظر بمون تا کد بیاد...
 """
-    
-    keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
     
     await update.message.reply_text(
         text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='HTML'
     )
     
-    return WAITING_FOR_CODE
+    # ارسال واقعی کد با Telethon
+    try:
+        from telethon import TelegramClient
+        
+        data = user_sessions[user_id]
+        phone = data['phone']
+        api_id = data['api_id']
+        api_hash = data['api_hash']
+        
+        session_name = f"temp_{phone}_{api_id}"
+        client = TelegramClient(session_name, api_id, api_hash)
+        
+        await client.connect()
+        
+        try:
+            await client.send_code_request(phone)
+            
+            # ذخیره کلاینت برای مراحل بعد
+            user_sessions[user_id]['client'] = client
+            user_sessions[user_id]['session_name'] = session_name
+            
+            text = f"""
+<b>✅ کد تایید ارسال شد!</b>
+━━━━━━━━━━━━━━━━━━━
 
-# ============ دریافت کد تایید ============
+📩 کد ۵ رقمی به شماره <code>{phone}</code> ارسال شد.
+
+لطفاً کد رو وارد کن:
+"""
+            
+            keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
+            
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+            
+            return WAITING_FOR_CODE
+            
+        except Exception as e:
+            error = str(e)
+            if "FLOOD" in error:
+                await update.message.reply_text(
+                    f"❌ خطا: درخواست زیاد! لطفاً چند دقیقه صبر کن و دوباره تلاش کن.\n\n{error[:100]}",
+                    parse_mode='HTML'
+                )
+            else:
+                await update.message.reply_text(
+                    f"❌ خطا در ارسال کد: {error[:200]}\n\n"
+                    "لطفاً شماره رو درست چک کن و دوباره تلاش کن.",
+                    parse_mode='HTML'
+                )
+            return ConversationHandler.END
+            
+    except ImportError:
+        await update.message.reply_text(
+            "❌ کتابخانه Telethon نصب نیست!\n\n"
+            "لطفاً با ادمین تماس بگیر.",
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
+
+# ============ دریافت کد ============
 async def get_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
@@ -309,35 +404,122 @@ async def get_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ لطفاً از منو شروع کن!", parse_mode='HTML')
         return ConversationHandler.END
     
-    user_sessions[user_id]['code'] = text
+    data = user_sessions[user_id]
     
-    text = f"""
-<b>✅ کد تایید دریافت شد!</b>
+    # وارد کردن کد با کلاینت موجود
+    try:
+        client = data.get('client')
+        if not client:
+            await update.message.reply_text(
+                "❌ اتصال معتبر نیست! لطفاً دوباره از منو شروع کن.",
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+        
+        phone = data['phone']
+        api_id = data['api_id']
+        api_hash = data['api_hash']
+        
+        try:
+            from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
+            
+            await client.sign_in(phone, text)
+            
+            # اگر موفق شد، سشن رو بگیر
+            session_string = client.session.save()
+            
+            # بستن کلاینت
+            await client.disconnect()
+            
+            # حذف فایل سشن
+            try:
+                os.remove(f"{data.get('session_name', 'temp')}.session")
+            except:
+                pass
+            
+            # نمایش سشن
+            result_text = f"""
+<b>✅ سشن با موفقیت ساخته شد!</b>
 ━━━━━━━━━━━━━━━━━━━
 
-📩 <b>کد:</b> <code>{text}</code>
+<b>📋 اطلاعات اکانت:</b>
+• <b>شماره:</b> <code>{phone}</code>
+• <b>API ID:</b> <code>{api_id}</code>
+• <b>API Hash:</b> <code>{api_hash[:10]}...{api_hash[-5:]}</code>
 
 ━━━━━━━━━━━━━━━━━━━
-<b>مرحله ۵ (اختیاری):</b>
+<b>🔑 سشن شما:</b>
+<code>{session_string}</code>
+━━━━━━━━━━━━━━━━━━━
 
-اگر <b>پسورد دو مرحله‌ای</b> داری، وارد کن.
-در غیر این صورت <b>/skip</b> رو بفرست.
+⚠️ <b>نکته مهم:</b>
+این سشن رو در جای امن نگهداری کن!
+به هیچکس نده!
 """
-    
-    keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
-    
-    await update.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
-    
-    return WAITING_FOR_PASSWORD
+            
+            keyboard = [
+                [InlineKeyboardButton("🔑 ساخت سشن جدید", callback_data="new_session")],
+                [InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]
+            ]
+            
+            await update.message.reply_text(
+                result_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+            
+            if user_id in user_sessions:
+                del user_sessions[user_id]
+            
+            return ConversationHandler.END
+            
+        except SessionPasswordNeededError:
+            # نیاز به پسورد
+            text = f"""
+<b>🔐 نیاز به پسورد دو مرحله‌ای!</b>
+━━━━━━━━━━━━━━━━━━━
 
-# ============ دریافت پسورد یا اسکیپ ============
+اکانت شما <b>پسورد دو مرحله‌ای</b> دارد.
+
+لطفاً پسورد خود را وارد کن:
+"""
+            
+            keyboard = [[InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]]
+            
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+            
+            return WAITING_FOR_PASSWORD
+            
+        except PhoneCodeInvalidError:
+            await update.message.reply_text(
+                "❌ کد وارد شده اشتباه است!\n\n"
+                "لطفاً دوباره کد رو وارد کن:",
+                parse_mode='HTML'
+            )
+            return WAITING_FOR_CODE
+            
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ خطا: {str(e)[:200]}",
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+            
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ خطا: {str(e)[:200]}",
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
+
+# ============ دریافت پسورد ============
 async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    text = update.message.text.strip()
+    password = update.message.text.strip()
     
     if user_id not in user_sessions:
         await update.message.reply_text("❌ لطفاً از منو شروع کن!", parse_mode='HTML')
@@ -345,108 +527,80 @@ async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     data = user_sessions[user_id]
     
-    # ساخت ابچی (سشن) واقعی
-    session = generate_session(
-        data.get('api_id'),
-        data.get('api_hash'),
-        data.get('phone'),
-        data.get('code'),
-        text if text != "/skip" else None
-    )
-    
-    result_text = f"""
-<b>✅ ابچی با موفقیت ساخته شد!</b>
+    try:
+        client = data.get('client')
+        if not client:
+            await update.message.reply_text(
+                "❌ اتصال معتبر نیست! لطفاً دوباره شروع کن.",
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+        
+        # وارد کردن پسورد
+        await client.sign_in(password=password)
+        
+        # گرفتن سشن
+        session_string = client.session.save()
+        
+        await client.disconnect()
+        
+        try:
+            os.remove(f"{data.get('session_name', 'temp')}.session")
+        except:
+            pass
+        
+        result_text = f"""
+<b>✅ سشن با موفقیت ساخته شد!</b>
 ━━━━━━━━━━━━━━━━━━━
 
 <b>📋 اطلاعات اکانت:</b>
-• <b>شماره:</b> <code>{data.get('phone')}</code>
-• <b>API ID:</b> <code>{data.get('api_id')}</code>
-• <b>API Hash:</b> <code>{data.get('api_hash')[:10]}...{data.get('api_hash')[-5:]}</code>
-• <b>کد تایید:</b> <code>{data.get('code')}</code>
-• <b>پسورد:</b> {mask_password(text) if text and text != '/skip' else '❌ ندارد'}
+• <b>شماره:</b> <code>{data['phone']}</code>
+• <b>API ID:</b> <code>{data['api_id']}</code>
+• <b>API Hash:</b> <code>{data['api_hash'][:10]}...{data['api_hash'][-5:]}</code>
+• <b>پسورد:</b> {mask_password(password)}
 
 ━━━━━━━━━━━━━━━━━━━
-<b>🔑 ابچی شما:</b>
-<code>{session}</code>
+<b>🔑 سشن شما:</b>
+<code>{session_string}</code>
 ━━━━━━━━━━━━━━━━━━━
 
 ⚠️ <b>نکته مهم:</b>
-این ابچی رو در جای امن نگهداری کن!
+این سشن رو در جای امن نگهداری کن!
 به هیچکس نده!
 """
-    
-    keyboard = [
-        [InlineKeyboardButton("🔑 ساخت ابچی جدید", callback_data="new_session")],
-        [InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]
-    ]
-    
-    await update.message.reply_text(
-        result_text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
-    
-    # پاک کردن اطلاعات
-    if user_id in user_sessions:
-        del user_sessions[user_id]
-    
-    return ConversationHandler.END
+        
+        keyboard = [
+            [InlineKeyboardButton("🔑 ساخت سشن جدید", callback_data="new_session")],
+            [InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]
+        ]
+        
+        await update.message.reply_text(
+            result_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+        
+        if user_id in user_sessions:
+            del user_sessions[user_id]
+        
+        return ConversationHandler.END
+        
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ پسورد اشتباه است! {str(e)[:100]}\n\n"
+            "لطفاً دوباره پسورد رو وارد کن:",
+            parse_mode='HTML'
+        )
+        return WAITING_FOR_PASSWORD
 
 # ============ اسکیپ پسورد ============
 async def skip_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    
-    if user_id not in user_sessions:
-        await update.message.reply_text("❌ لطفاً از منو شروع کن!", parse_mode='HTML')
-        return ConversationHandler.END
-    
-    data = user_sessions[user_id]
-    
-    # ساخت ابچی بدون پسورد
-    session = generate_session(
-        data.get('api_id'),
-        data.get('api_hash'),
-        data.get('phone'),
-        data.get('code'),
-        None
-    )
-    
-    result_text = f"""
-<b>✅ ابچی با موفقیت ساخته شد!</b>
-━━━━━━━━━━━━━━━━━━━
-
-<b>📋 اطلاعات اکانت:</b>
-• <b>شماره:</b> <code>{data.get('phone')}</code>
-• <b>API ID:</b> <code>{data.get('api_id')}</code>
-• <b>API Hash:</b> <code>{data.get('api_hash')[:10]}...{data.get('api_hash')[-5:]}</code>
-• <b>کد تایید:</b> <code>{data.get('code')}</code>
-• <b>پسورد:</b> ❌ ندارد
-
-━━━━━━━━━━━━━━━━━━━
-<b>🔑 ابچی شما:</b>
-<code>{session}</code>
-━━━━━━━━━━━━━━━━━━━
-
-⚠️ <b>نکته مهم:</b>
-این ابچی رو در جای امن نگهداری کن!
-به هیچکس نده!
-"""
-    
-    keyboard = [
-        [InlineKeyboardButton("🔑 ساخت ابچی جدید", callback_data="new_session")],
-        [InlineKeyboardButton("🔙 منوی اصلی", callback_data="back")]
-    ]
-    
     await update.message.reply_text(
-        result_text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "❌ بدون پسورد نمیشه وارد شد!\n\n"
+        "لطفاً پسورد دو مرحله‌ای رو وارد کن.",
         parse_mode='HTML'
     )
-    
-    if user_id in user_sessions:
-        del user_sessions[user_id]
-    
-    return ConversationHandler.END
+    return WAITING_FOR_PASSWORD
 
 # ============ دکمه برگشت ============
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -454,7 +608,15 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     user_id = query.from_user.id
+    
+    # بستن کلاینت
     if user_id in user_sessions:
+        try:
+            client = user_sessions[user_id].get('client')
+            if client:
+                await client.disconnect()
+        except:
+            pass
         del user_sessions[user_id]
     
     await main_menu(update, context, edit=True)
@@ -462,17 +624,24 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ لغو ============
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
     if user_id in user_sessions:
+        try:
+            client = user_sessions[user_id].get('client')
+            if client:
+                await client.disconnect()
+        except:
+            pass
         del user_sessions[user_id]
     
     await update.message.reply_text(
-        "❌ ساخت ابچی لغو شد!\n\n"
+        "❌ ساخت سشن لغو شد!\n\n"
         "برای شروع دوباره از /start استفاده کن.",
         parse_mode='HTML'
     )
     return ConversationHandler.END
 
-# ============ دستور start ============
+# ============ start ============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await main_menu(update, context)
 
@@ -482,14 +651,13 @@ def main():
         delete_webhook()
         
         print("=" * 60)
-        print("🚀 ربات ابچی‌ساز حرفه‌ای")
+        print("🚀 ربات سشن‌ساز حرفه‌ای (واقعی)")
         print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
         
         application = Application.builder().token(TOKEN).build()
         
-        # ConversationHandler
         conv_handler = ConversationHandler(
             entry_points=[
                 CallbackQueryHandler(new_session, pattern="^new_session$")
