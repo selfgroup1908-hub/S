@@ -27,7 +27,6 @@ WAITING_FOR_CODE = 4
 WAITING_FOR_PASSWORD = 5
 WAITING_FOR_GROUP_LINK = 6
 WAITING_FOR_AD_TEXT = 7
-WAITING_FOR_AUTO_AD = 8
 
 user_sessions = {}
 user_messages = {}
@@ -200,6 +199,8 @@ async def show_owners(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
     
+    # ذخیره وضعیت
+    context.user_data['owner_check'] = True
     ad_data[query.from_user.id] = {"mode": "owner_check"}
     
     return WAITING_FOR_GROUP_LINK
@@ -273,6 +274,14 @@ async def get_group_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_messages[user_id] = msg.message_id
         return WAITING_FOR_GROUP_LINK
     
+    # چک کردن اینکه کاربر در حالت owner_check هست یا manual_ad
+    mode = ad_data[user_id].get("mode", "manual_ad")
+    
+    if mode == "owner_check":
+        # نمایش مالکین گروه
+        return await show_group_owners(update, context)
+    
+    # تبلیغ دستی
     ad_data[user_id]["links"].append(text)
     
     text = f"""
@@ -1106,6 +1115,8 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del user_messages[user_id]
     if user_id in ad_data:
         del ad_data[user_id]
+    if 'owner_check' in context.user_data:
+        del context.user_data['owner_check']
     
     await main_menu(update, context, edit=True)
 
@@ -1150,14 +1161,19 @@ def main():
         
         application = Application.builder().token(TOKEN).build()
         
+        # هندلرهای دکمه‌ها (خارج از ConversationHandler)
+        application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
+        application.add_handler(CallbackQueryHandler(manual_ad, pattern="^manual_ad$"))
+        application.add_handler(CallbackQueryHandler(auto_ad, pattern="^auto_ad$"))
+        application.add_handler(CallbackQueryHandler(show_owners, pattern="^show_owners$"))
+        application.add_handler(CallbackQueryHandler(no_more_links, pattern="^no_more_links$"))
+        application.add_handler(CallbackQueryHandler(list_tabchis, pattern="^list_tabchis$"))
+        application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
+        application.add_handler(CommandHandler("start", start))
+        
+        # ConversationHandler فقط برای دریافت پیام‌ها
         conv_handler = ConversationHandler(
-            entry_points=[
-                CallbackQueryHandler(new_session, pattern="^new_session$"),
-                CallbackQueryHandler(manual_ad, pattern="^manual_ad$"),
-                CallbackQueryHandler(auto_ad, pattern="^auto_ad$"),
-                CallbackQueryHandler(show_owners, pattern="^show_owners$"),
-                CallbackQueryHandler(no_more_links, pattern="^no_more_links$")
-            ],
+            entry_points=[],
             states={
                 WAITING_FOR_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
                 WAITING_FOR_API_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_api_id)],
@@ -1169,15 +1185,11 @@ def main():
             },
             fallbacks=[
                 CommandHandler("cancel", cancel),
-                CallbackQueryHandler(back_to_menu, pattern="^back$")
             ],
             name="main_handler",
             persistent=False
         )
         
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
-        application.add_handler(CallbackQueryHandler(list_tabchis, pattern="^list_tabchis$"))
         application.add_handler(conv_handler)
         
         print("✅ ربات روشن شد!")
