@@ -1,4 +1,3 @@
-```python
 import logging
 import re
 import asyncio
@@ -1205,4 +1204,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
