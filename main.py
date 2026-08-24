@@ -194,6 +194,7 @@ async def show_owners(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
     
+    context.user_data['mode'] = 'owner_check'
     ad_data[query.from_user.id] = {"mode": "owner_check"}
     
     return WAITING_FOR_OWNER_LINK
