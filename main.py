@@ -1087,6 +1087,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ اجرا ============
 def main():
     try:
+        # حذف webhook برای اطمینان
         delete_webhook()
         
         print("=" * 60)
@@ -1095,8 +1096,10 @@ def main():
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
         
+        # ساخت برنامه
         application = Application.builder().token(TOKEN).build()
         
+        # هندلر مکالمه
         conv_handler = ConversationHandler(
             entry_points=[
                 CallbackQueryHandler(new_session, pattern="^new_session$"),
@@ -1116,11 +1119,13 @@ def main():
                 CallbackQueryHandler(back_to_menu, pattern="^back$"),
             ],
             name="main_handler",
-            persistent=False
+            persistent=False,
+            per_chat=True
         )
         
         application.add_handler(conv_handler)
         
+        # هندلرهای دکمه‌ها
         application.add_handler(CallbackQueryHandler(manual_ad, pattern="^manual_ad$"))
         application.add_handler(CallbackQueryHandler(auto_ad, pattern="^auto_ad$"))
         application.add_handler(CallbackQueryHandler(show_owners, pattern="^show_owners$"))
@@ -1133,7 +1138,12 @@ def main():
         print("💡 برای شروع از /start استفاده کنید.")
         print("=" * 60)
         
-        application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+        # اجرا با تنظیمات مناسب
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+            timeout=30
+        )
         
     except Exception as e:
         print(f"❌ خطا: {e}")
