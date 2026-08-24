@@ -80,11 +80,29 @@ def mask_string(s, show=5):
         return s
     return s[:show] + "..." + s[-3:]
 
+async def clear_user_session(user_id):
+    """پاک کردن جلسه کاربر"""
+    if user_id in user_sessions:
+        try:
+            client = user_sessions[user_id].get('client')
+            if client:
+                await client.disconnect()
+        except:
+            pass
+        del user_sessions[user_id]
+    if user_id in user_messages:
+        del user_messages[user_id]
+    if user_id in ad_data:
+        del ad_data[user_id]
+
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
     user = update.effective_user
     mention = f"@{user.username}" if user.username else user.first_name
     user_id = str(user.id)
+    
+    # پاک کردن جلسه قبلی کاربر
+    await clear_user_session(user.id)
     
     tabchi_count = len(tabchi_data.get(user_id, []))
     
@@ -194,7 +212,6 @@ async def show_owners(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
     
-    context.user_data['mode'] = 'owner_check'
     ad_data[query.from_user.id] = {"mode": "owner_check"}
     
     return WAITING_FOR_OWNER_LINK
@@ -559,6 +576,10 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     user_id = query.from_user.id
+    
+    # پاک کردن جلسه قبلی
+    await clear_user_session(user_id)
+    
     user_sessions[user_id] = {}
     
     text = """
@@ -840,10 +861,8 @@ async def get_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode='Markdown'
                 )
             
-            if user_id in user_sessions:
-                del user_sessions[user_id]
-            if user_id in user_messages:
-                del user_messages[user_id]
+            # پاک کردن جلسه
+            await clear_user_session(user_id)
             
             return ConversationHandler.END
             
@@ -983,10 +1002,8 @@ async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='Markdown'
             )
         
-        if user_id in user_sessions:
-            del user_sessions[user_id]
-        if user_id in user_messages:
-            del user_messages[user_id]
+        # پاک کردن جلسه
+        await clear_user_session(user_id)
         
         return ConversationHandler.END
         
@@ -1043,18 +1060,8 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     
-    if user_id in user_sessions:
-        try:
-            client = user_sessions[user_id].get('client')
-            if client:
-                await client.disconnect()
-        except:
-            pass
-        del user_sessions[user_id]
-    if user_id in user_messages:
-        del user_messages[user_id]
-    if user_id in ad_data:
-        del ad_data[user_id]
+    # پاک کردن جلسه کاربر
+    await clear_user_session(user_id)
     
     await main_menu(update, context, edit=True)
 
@@ -1062,18 +1069,8 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    if user_id in user_sessions:
-        try:
-            client = user_sessions[user_id].get('client')
-            if client:
-                await client.disconnect()
-        except:
-            pass
-        del user_sessions[user_id]
-    if user_id in user_messages:
-        del user_messages[user_id]
-    if user_id in ad_data:
-        del ad_data[user_id]
+    # پاک کردن جلسه کاربر
+    await clear_user_session(user_id)
     
     await update.message.reply_text(
         "❌ عملیات لغو شد.\n\n🔄 برای شروع مجدد از /start استفاده کنید.",
@@ -1104,6 +1101,8 @@ def main():
         conv_handler = ConversationHandler(
             entry_points=[
                 CallbackQueryHandler(new_session, pattern="^new_session$"),
+                CallbackQueryHandler(manual_ad, pattern="^manual_ad$"),
+                CallbackQueryHandler(show_owners, pattern="^show_owners$"),
             ],
             states={
                 WAITING_FOR_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
@@ -1121,18 +1120,16 @@ def main():
             ],
             name="main_handler",
             persistent=False,
-            per_chat=True
+            per_chat=True,
+            per_user=True
         )
         
         application.add_handler(conv_handler)
         
-        # هندلرهای دکمه‌ها
-        application.add_handler(CallbackQueryHandler(manual_ad, pattern="^manual_ad$"))
+        # هندلرهای دکمه‌های دیگه
         application.add_handler(CallbackQueryHandler(auto_ad, pattern="^auto_ad$"))
-        application.add_handler(CallbackQueryHandler(show_owners, pattern="^show_owners$"))
         application.add_handler(CallbackQueryHandler(no_more_links, pattern="^no_more_links$"))
         application.add_handler(CallbackQueryHandler(list_tabchis, pattern="^list_tabchis$"))
-        application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
         application.add_handler(CommandHandler("start", start))
         
         print("✅ ربات با موفقیت راه‌اندازی شد.")
