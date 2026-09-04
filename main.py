@@ -718,7 +718,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ لطفاً از دکمه‌های منو استفاده فرمایید.", parse_mode='Markdown')
 
 # ============ اجرا ============
-async def main():
+def main():
     try:
         delete_webhook()
         
@@ -728,6 +728,7 @@ async def main():
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
         
+        # ساخت اپلیکیشن
         application = Application.builder().token(TOKEN).build()
         
         # دکمه‌ها
@@ -749,17 +750,14 @@ async def main():
         print("💡 برای شروع از /start استفاده فرمایید.")
         print("=" * 60)
         
-        # شروع پولینگ
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling(drop_pending_updates=True)
+        # اجرای ساده
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
         
-        # نگه داشتن ربات در حال اجرا
-        while True:
-            await asyncio.sleep(1)
-            
     except Exception as e:
         print(f"❌ خطا: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
