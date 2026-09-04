@@ -69,9 +69,18 @@ def mask_string(s, show=5):
     return s[:show] + "..." + s[-3:]
 
 def get_iran_time():
+    """دریافت زمان دقیق ایران با ثانیه"""
     now = datetime.utcnow()
     iran_time = now + timedelta(hours=3, minutes=30)
-    return iran_time.strftime("%Y/%m/%d %H:%M:%S")
+    return iran_time
+
+def get_iran_time_str():
+    """دریافت زمان دقیق ایران به صورت رشته"""
+    return get_iran_time().strftime("%H:%M:%S")
+
+def get_iran_date_str():
+    """دریافت تاریخ ایران"""
+    return get_iran_time().strftime("%Y/%m/%d")
 
 async def clear_user_session(user_id):
     if user_id in user_sessions:
@@ -154,15 +163,19 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     
     for i, self_account in enumerate(selfs):
-        status = "✅ *فعال*" if self_account.get('active', True) else "❌ *غیرفعال*"
         phone = self_account.get('phone', 'نامشخص')
         active_time = self_account.get('active_time', 'تنظیم نشده')
+        account_name = self_account.get('account_name', 'نامشخص')
+        clock_active = self_account.get('clock_active', False)
+        
+        clock_status = "🟢 فعال" if clock_active else "🔴 غیرفعال"
+        time_display = f"{account_name} {active_time}" if active_time != 'تنظیم نشده' else f"{account_name} - ساعت تنظیم نشده"
         
         text += f"""
 🔹 *سلف شماره {i+1}*
    📱 شماره: `{phone}`
-   📊 وضعیت: {status}
-   ⏰ ساعت فعال: `{active_time}`
+   🕐 ساعت: `{time_display}`
+   📊 وضعیت ساعت: {clock_status}
 """
         keyboard.append([InlineKeyboardButton(f"⚙️ مدیریت سلف {i+1}", callback_data=f"manage_{i}")])
     
@@ -190,28 +203,32 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     self_account = selfs[index]
     phone = self_account.get('phone', 'نامشخص')
-    is_active = self_account.get('active', True)
+    account_name = self_account.get('account_name', 'نامشخص')
+    clock_active = self_account.get('clock_active', False)
     active_time = self_account.get('active_time', 'تنظیم نشده')
     
-    status_text = "✅ *فعال*" if is_active else "❌ *غیرفعال*"
+    time_display = f"{account_name} {active_time}" if active_time != 'تنظیم نشده' else f"{account_name} - ساعت تنظیم نشده"
+    clock_status = "🟢 فعال" if clock_active else "🔴 غیرفعال"
     
     text = f"""
 ⚙️ *مدیریت سلف شماره {index + 1}*
 
 📱 *شماره:* `{phone}`
-📊 *وضعیت:* {status_text}
-⏰ *ساعت فعال:* `{active_time}`
+👤 *نام اکانت:* `{account_name}`
+🕐 *ساعت:* `{time_display}`
+📊 *وضعیت:* {clock_status}
 
 🔹 لطفاً یکی از گزینه‌های زیر را انتخاب فرمایید:
 """
     
-    keyboard = []
+    keyboard = [
+        [InlineKeyboardButton("👤 تنظیم پروفایل", callback_data=f"profile_{index}")]
+    ]
     
-    if is_active:
-        keyboard.append([InlineKeyboardButton("⏰ تنظیم ساعت فعال", callback_data=f"set_time_{index}")])
-        keyboard.append([InlineKeyboardButton("❌ غیرفعال کردن سلف", callback_data=f"deactivate_{index}")])
+    if clock_active:
+        keyboard.append([InlineKeyboardButton("⏰ غیرفعال کردن ساعت", callback_data=f"deactivate_clock_{index}")])
     else:
-        keyboard.append([InlineKeyboardButton("✅ فعال کردن سلف", callback_data=f"activate_{index}")])
+        keyboard.append([InlineKeyboardButton("⏰ فعال کردن ساعت", callback_data=f"activate_clock_{index}")])
     
     keyboard.append([InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_selfs")])
     
@@ -221,8 +238,104 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-# ============ تنظیم ساعت فعال ============
-async def set_active_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ============ تنظیم پروفایل ============
+async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = str(query.from_user.id)
+    index = int(query.data.split('_')[1])
+    
+    selfs = self_data.get(user_id, [])
+    if index >= len(selfs):
+        await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='Markdown')
+        return
+    
+    self_account = selfs[index]
+    phone = self_account.get('phone', 'نامشخص')
+    account_name = self_account.get('account_name', 'نامشخص')
+    clock_active = self_account.get('clock_active', False)
+    
+    text = f"""
+👤 *تنظیم پروفایل سلف شماره {index + 1}*
+
+📱 *شماره:* `{phone}`
+👤 *نام اکانت:* `{account_name}`
+📊 *وضعیت ساعت:* {'🟢 فعال' if clock_active else '🔴 غیرفعال'}
+
+🔹 در حال دریافت اطلاعات پروفایل...
+"""
+    
+    await query.edit_message_text(
+        text,
+        parse_mode='Markdown'
+    )
+    
+    # دریافت اطلاعات از تلگرام
+    try:
+        client = TelegramClient(
+            self_account.get('session'),
+            self_account.get('api_id'),
+            self_account.get('api_hash')
+        )
+        await client.connect()
+        
+        if await client.is_user_authorized():
+            me = await client.get_me()
+            
+            profile_text = f"""
+👤 *پروفایل اکانت*
+
+📱 *شماره:* `{phone}`
+👤 *نام:* {me.first_name or 'ندارد'}
+👤 *نام خانوادگی:* {me.last_name or 'ندارد'}
+👤 *یوزرنیم:* @{me.username if me.username else 'ندارد'}
+🆔 *آیدی:* `{me.id}`
+📊 *وضعیت ساعت:* {'🟢 فعال' if clock_active else '🔴 غیرفعال'}
+
+🔹 اطلاعات پروفایل با موفقیت دریافت شد.
+"""
+            
+            await client.disconnect()
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 بازگشت به مدیریت", callback_data=f"manage_{index}")],
+                [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
+            ]
+            
+            await query.edit_message_text(
+                profile_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await client.disconnect()
+            text = """
+❌ *اکانت معتبر نیست!*
+
+🔹 لطفاً مجدداً سلف را ایجاد کنید.
+"""
+            keyboard = [
+                [InlineKeyboardButton("🔙 بازگشت به مدیریت", callback_data=f"manage_{index}")],
+                [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
+            ]
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            
+    except Exception as e:
+        logger.error(f"Error getting profile: {e}")
+        text = f"""
+❌ *خطا در دریافت پروفایل!*
+
+{str(e)[:200]}
+"""
+        keyboard = [
+            [InlineKeyboardButton("🔙 بازگشت به مدیریت", callback_data=f"manage_{index}")],
+            [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+# ============ فعال کردن ساعت ============
+async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
@@ -234,19 +347,25 @@ async def set_active_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='Markdown')
         return
     
-    time_str = get_iran_time()
+    # دریافت زمان دقیق ایران
+    time_str = get_iran_time_str()
+    date_str = get_iran_date_str()
+    account_name = selfs[index].get('account_name', 'کاربر')
     
+    # ذخیره زمان در دیتا
     selfs[index]['active_time'] = time_str
-    selfs[index]['active'] = True
+    selfs[index]['clock_active'] = True
+    selfs[index]['last_update'] = f"{date_str} {time_str}"
     save_data()
     
     text = f"""
-✅ *ساعت فعال با موفقیت ثبت شد!*
+✅ *ساعت با موفقیت فعال شد!*
 
-📱 *شماره:* `{selfs[index].get('phone', 'نامشخص')}`
-⏰ *ساعت فعال:* `{time_str}`
+👤 *نام اکانت:* `{account_name}`
+🕐 *ساعت فعال:* `{time_str}`
+📅 *تاریخ:* `{date_str}`
 
-🔹 ساعت فعال برای این سلف با موفقیت تنظیم گردید.
+🔹 ساعت برای این سلف با موفقیت فعال گردید.
 """
     
     keyboard = [
@@ -260,63 +379,30 @@ async def set_active_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-# ============ فعال کردن سلف ============
-async def activate_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ============ غیرفعال کردن ساعت ============
+async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     user_id = str(query.from_user.id)
-    index = int(query.data.split('_')[1])
+    index = int(query.data.split('_')[2])
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
         await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='Markdown')
         return
     
-    selfs[index]['active'] = True
+    account_name = selfs[index].get('account_name', 'کاربر')
+    
+    selfs[index]['clock_active'] = False
     save_data()
     
     text = f"""
-✅ *سلف با موفقیت فعال شد!*
+❌ *ساعت با موفقیت غیرفعال شد!*
 
-📱 *شماره:* `{selfs[index].get('phone', 'نامشخص')}`
+👤 *نام اکانت:* `{account_name}`
 
-🔹 سلف مورد نظر با موفقیت فعال گردید.
-"""
-    
-    keyboard = [
-        [InlineKeyboardButton("🔙 بازگشت به مدیریت", callback_data=f"manage_{index}")],
-        [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
-    ]
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
-
-# ============ غیرفعال کردن سلف ============
-async def deactivate_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = str(query.from_user.id)
-    index = int(query.data.split('_')[1])
-    
-    selfs = self_data.get(user_id, [])
-    if index >= len(selfs):
-        await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='Markdown')
-        return
-    
-    selfs[index]['active'] = False
-    save_data()
-    
-    text = f"""
-❌ *سلف با موفقیت غیرفعال شد!*
-
-📱 *شماره:* `{selfs[index].get('phone', 'نامشخص')}`
-
-🔹 سلف مورد نظر با موفقیت غیرفعال گردید.
+🔹 ساعت برای این سلف با موفقیت غیرفعال گردید.
 """
     
     keyboard = [
@@ -533,20 +619,31 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
+        # دریافت اطلاعات اکانت
+        client2 = TelegramClient(session_string, api_id, api_hash)
+        await client2.connect()
+        me = await client2.get_me()
+        account_name = me.first_name if me.first_name else "کاربر"
+        await client2.disconnect()
+        
         user_id_str = str(user_id)
         if user_id_str not in self_data:
             self_data[user_id_str] = []
         
-        time_str = get_iran_time()
+        time_str = get_iran_time_str()
+        date_str = get_iran_date_str()
         
         self_data[user_id_str].append({
             "session": session_string,
             "phone": phone,
             "api_id": api_id,
             "api_hash": api_hash,
+            "account_name": account_name,
             "active": True,
-            "created": time_str,
-            "active_time": time_str
+            "clock_active": False,
+            "active_time": "تنظیم نشده",
+            "created": f"{date_str} {time_str}",
+            "last_update": f"{date_str} {time_str}"
         })
         save_data()
         
@@ -556,8 +653,8 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ✅ *سلف جدید با موفقیت ایجاد شد!*
 
 📱 *شماره:* `{phone}`
+👤 *نام اکانت:* `{account_name}`
 🔑 *شناسه جلسه:* `{mask_string(session_string, 10)}`
-⏰ *ساعت فعال:* `{time_str}`
 
 🎯 سلف جدید به لیست شما اضافه گردید.
 """
@@ -632,20 +729,31 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
+        # دریافت اطلاعات اکانت
+        client2 = TelegramClient(session_string, data['api_id'], data['api_hash'])
+        await client2.connect()
+        me = await client2.get_me()
+        account_name = me.first_name if me.first_name else "کاربر"
+        await client2.disconnect()
+        
         user_id_str = str(user_id)
         if user_id_str not in self_data:
             self_data[user_id_str] = []
         
-        time_str = get_iran_time()
+        time_str = get_iran_time_str()
+        date_str = get_iran_date_str()
         
         self_data[user_id_str].append({
             "session": session_string,
             "phone": data['phone'],
             "api_id": data['api_id'],
             "api_hash": data['api_hash'],
+            "account_name": account_name,
             "active": True,
-            "created": time_str,
-            "active_time": time_str
+            "clock_active": False,
+            "active_time": "تنظیم نشده",
+            "created": f"{date_str} {time_str}",
+            "last_update": f"{date_str} {time_str}"
         })
         save_data()
         
@@ -655,8 +763,8 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ✅ *سلف جدید با موفقیت ایجاد شد!*
 
 📱 *شماره:* `{data['phone']}`
+👤 *نام اکانت:* `{account_name}`
 🔑 *شناسه جلسه:* `{mask_string(session_string, 10)}`
-⏰ *ساعت فعال:* `{time_str}`
 
 🎯 سلف جدید به لیست شما اضافه گردید.
 """
@@ -729,9 +837,9 @@ def main():
         application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
         application.add_handler(CallbackQueryHandler(list_selfs, pattern="^list_selfs$"))
         application.add_handler(CallbackQueryHandler(manage_self, pattern="^manage_"))
-        application.add_handler(CallbackQueryHandler(set_active_time, pattern="^set_time_"))
-        application.add_handler(CallbackQueryHandler(activate_self, pattern="^activate_"))
-        application.add_handler(CallbackQueryHandler(deactivate_self, pattern="^deactivate_"))
+        application.add_handler(CallbackQueryHandler(profile_settings, pattern="^profile_"))
+        application.add_handler(CallbackQueryHandler(activate_clock, pattern="^activate_clock_"))
+        application.add_handler(CallbackQueryHandler(deactivate_clock, pattern="^deactivate_clock_"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
         
         application.add_handler(CommandHandler("start", start))
