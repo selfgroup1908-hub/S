@@ -9,8 +9,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError
 import urllib.request
-import sys
-import signal
 
 # ============ تنظیمات ============
 TOKEN = "8810050319:AAH5T1qehg7U-oplDB_yp4JVGZl6W866BzY"
@@ -167,7 +165,7 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, self_account in enumerate(selfs):
         phone = self_account.get('phone', 'نامشخص')
         active_time = self_account.get('active_time', 'تنظیم نشده')
-        account_name = self_account.get('account_name', 'نامشخص')
+        account_name = self_account.get('account_name', 'بدون نام')
         clock_active = self_account.get('clock_active', False)
         
         clock_status = "🟢 فعال" if clock_active else "🔴 غیرفعال"
@@ -176,6 +174,7 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"""
 🔹 سلف شماره {i+1}
    📱 شماره: {phone}
+   👤 نام: {account_name}
    🕐 ساعت: {time_display}
    📊 وضعیت ساعت: {clock_status}
 """
@@ -205,7 +204,7 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     self_account = selfs[index]
     phone = self_account.get('phone', 'نامشخص')
-    account_name = self_account.get('account_name', 'نامشخص')
+    account_name = self_account.get('account_name', 'بدون نام')
     clock_active = self_account.get('clock_active', False)
     active_time = self_account.get('active_time', 'تنظیم نشده')
     
@@ -255,7 +254,7 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     self_account = selfs[index]
     phone = self_account.get('phone', 'نامشخص')
-    account_name = self_account.get('account_name', 'نامشخص')
+    account_name = self_account.get('account_name', 'بدون نام')
     clock_active = self_account.get('clock_active', False)
     
     text = f"""
@@ -353,7 +352,7 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     time_str = get_iran_time_str()
-    account_name = selfs[index].get('account_name', 'کاربر')
+    account_name = selfs[index].get('account_name', 'بدون نام')
     
     selfs[index]['active_time'] = time_str
     selfs[index]['clock_active'] = True
@@ -392,7 +391,7 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='HTML')
         return
     
-    account_name = selfs[index].get('account_name', 'کاربر')
+    account_name = selfs[index].get('account_name', 'بدون نام')
     
     selfs[index]['clock_active'] = False
     save_data()
@@ -619,15 +618,21 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
-        # دریافت اطلاعات اکانت
+        # دریافت نام اکانت از تلگرام
+        account_name = "بدون نام"
         try:
             client2 = TelegramClient(session_string, api_id, api_hash)
             await client2.connect()
-            me = await client2.get_me()
-            account_name = me.first_name if me and me.first_name else "کاربر"
+            if await client2.is_user_authorized():
+                me = await client2.get_me()
+                if me and me.first_name:
+                    account_name = me.first_name
+                elif me and me.username:
+                    account_name = me.username
             await client2.disconnect()
-        except:
-            account_name = "کاربر"
+        except Exception as e:
+            logger.error(f"Error getting account name: {e}")
+            account_name = "بدون نام"
         
         user_id_str = str(user_id)
         if user_id_str not in self_data:
@@ -732,15 +737,21 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
-        # دریافت اطلاعات اکانت
+        # دریافت نام اکانت از تلگرام
+        account_name = "بدون نام"
         try:
             client2 = TelegramClient(session_string, data['api_id'], data['api_hash'])
             await client2.connect()
-            me = await client2.get_me()
-            account_name = me.first_name if me and me.first_name else "کاربر"
+            if await client2.is_user_authorized():
+                me = await client2.get_me()
+                if me and me.first_name:
+                    account_name = me.first_name
+                elif me and me.username:
+                    account_name = me.username
             await client2.disconnect()
-        except:
-            account_name = "کاربر"
+        except Exception as e:
+            logger.error(f"Error getting account name: {e}")
+            account_name = "بدون نام"
         
         user_id_str = str(user_id)
         if user_id_str not in self_data:
@@ -839,8 +850,10 @@ def main():
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
         
+        # ساخت اپلیکیشن
         application = Application.builder().token(TOKEN).build()
         
+        # اضافه کردن هندلرها
         application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
         application.add_handler(CallbackQueryHandler(list_selfs, pattern="^list_selfs$"))
         application.add_handler(CallbackQueryHandler(manage_self, pattern="^manage_"))
@@ -856,7 +869,7 @@ def main():
         print("💡 برای شروع از /start استفاده فرمایید.")
         print("=" * 60)
         
-        # اجرا با تنظیمات ساده
+        # اجرا
         application.run_polling(
             drop_pending_updates=True
         )
