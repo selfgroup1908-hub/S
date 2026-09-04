@@ -8,6 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError
+from telethon.tl.functions.account import UpdateProfileRequest
 import urllib.request
 
 # ============ تنظیمات ============
@@ -91,6 +92,91 @@ async def clear_user_session(user_id):
         except:
             pass
         del user_sessions[user_id]
+
+# ============ توابع ساعت ============
+async def set_clock_on_profile(session_string, api_id, api_hash):
+    """گذاشتن ساعت روی اسم اکانت"""
+    try:
+        client = TelegramClient("sessions/temp_clock", api_id, api_hash)
+        await client.connect()
+        
+        if not await client.is_user_authorized():
+            await client.disconnect()
+            return False
+        
+        me = await client.get_me()
+        first_name = me.first_name if me.first_name else ""
+        last_name = me.last_name if me.last_name else ""
+        current_name = f"{first_name} {last_name}".strip()
+        
+        if not current_name:
+            current_name = me.username if me.username else "کاربر"
+        
+        time_str = get_iran_time_str()
+        clean_name = re.sub(r'\s*\d{2}:\d{2}$', '', current_name).strip()
+        new_name = f"{clean_name} {time_str}".strip()
+        
+        if new_name != current_name:
+            try:
+                await client(UpdateProfileRequest(first_name=new_name))
+                await client.disconnect()
+                return True
+            except:
+                await client.disconnect()
+                return False
+        
+        await client.disconnect()
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error in set_clock_on_profile: {e}")
+        return False
+
+async def remove_clock_from_profile(session_string, api_id, api_hash):
+    """حذف ساعت از روی اسم اکانت"""
+    try:
+        client = TelegramClient("sessions/temp_clock", api_id, api_hash)
+        await client.connect()
+        
+        if not await client.is_user_authorized():
+            await client.disconnect()
+            return False
+        
+        me = await client.get_me()
+        first_name = me.first_name if me.first_name else ""
+        last_name = me.last_name if me.last_name else ""
+        current_name = f"{first_name} {last_name}".strip()
+        
+        if not current_name:
+            current_name = me.username if me.username else "کاربر"
+        
+        clean_name = re.sub(r'\s*\d{2}:\d{2}$', '', current_name).strip()
+        
+        if clean_name != current_name:
+            try:
+                await client(UpdateProfileRequest(first_name=clean_name))
+                await client.disconnect()
+                return True
+            except:
+                await client.disconnect()
+                return False
+        
+        await client.disconnect()
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error in remove_clock_from_profile: {e}")
+        return False
+
+async def update_clock_loop(user_id, session_string, api_id, api_hash, stop_event):
+    """حلقه برای بروزرسانی ساعت هر دقیقه"""
+    while not stop_event.is_set():
+        try:
+            await set_clock_on_profile(session_string, api_id, api_hash)
+            await asyncio.sleep(60)
+        except Exception as e:
+            logger.error(f"Error in clock loop for user {user_id}: {e}")
+            await asyncio.sleep(60)
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -274,7 +360,7 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         client = TelegramClient(
-            self_account.get('session'),
+            "sessions/temp_profile",
             self_account.get('api_id'),
             self_account.get('api_hash')
         )
@@ -351,20 +437,34 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='HTML')
         return
     
+    self_account = selfs[index]
+    session_string = self_account.get('session')
+    api_id = self_account.get('api_id')
+    api_hash = self_account.get('api_hash')
+    
     time_str = get_iran_time_str()
-    account_name = selfs[index].get('account_name', 'بدون نام')
     
-    selfs[index]['active_time'] = time_str
-    selfs[index]['clock_active'] = True
-    save_data()
+    # فعال کردن ساعت روی پروفایل
+    result = await set_clock_on_profile(session_string, api_id, api_hash)
     
-    text = f"""
+    if result:
+        selfs[index]['active_time'] = time_str
+        selfs[index]['clock_active'] = True
+        save_data()
+        
+        text = f"""
 ✅ ساعت با موفقیت فعال شد!
 
-👤 نام اکانت: {account_name}
+👤 نام اکانت: {selfs[index].get('account_name', 'کاربر')}
 🕐 ساعت فعال: {time_str}
 
 ساعت برای این سلف با موفقیت فعال گردید.
+"""
+    else:
+        text = """
+❌ خطا در فعال کردن ساعت!
+
+لطفاً مطمئن شوید که اکانت معتبر است و دوباره تلاش کنید.
 """
     
     keyboard = [
@@ -391,17 +491,31 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='HTML')
         return
     
-    account_name = selfs[index].get('account_name', 'بدون نام')
+    self_account = selfs[index]
+    session_string = self_account.get('session')
+    api_id = self_account.get('api_id')
+    api_hash = self_account.get('api_hash')
+    account_name = selfs[index].get('account_name', 'کاربر')
     
-    selfs[index]['clock_active'] = False
-    save_data()
+    # غیرفعال کردن ساعت از پروفایل
+    result = await remove_clock_from_profile(session_string, api_id, api_hash)
     
-    text = f"""
+    if result:
+        selfs[index]['clock_active'] = False
+        save_data()
+        
+        text = f"""
 ❌ ساعت با موفقیت غیرفعال شد!
 
 👤 نام اکانت: {account_name}
 
 ساعت برای این سلف با موفقیت غیرفعال گردید.
+"""
+    else:
+        text = """
+❌ خطا در غیرفعال کردن ساعت!
+
+لطفاً مطمئن شوید که اکانت معتبر است و دوباره تلاش کنید.
 """
     
     keyboard = [
@@ -618,10 +732,10 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
-        # دریافت نام اکانت از تلگرام
+        # دریافت اطلاعات اکانت
         account_name = "بدون نام"
         try:
-            client2 = TelegramClient(session_string, api_id, api_hash)
+            client2 = TelegramClient("sessions/temp_name", api_id, api_hash)
             await client2.connect()
             if await client2.is_user_authorized():
                 me = await client2.get_me()
@@ -630,8 +744,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 elif me and me.username:
                     account_name = me.username
             await client2.disconnect()
-        except Exception as e:
-            logger.error(f"Error getting account name: {e}")
+        except:
             account_name = "بدون نام"
         
         user_id_str = str(user_id)
@@ -737,10 +850,10 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
-        # دریافت نام اکانت از تلگرام
+        # دریافت اطلاعات اکانت
         account_name = "بدون نام"
         try:
-            client2 = TelegramClient(session_string, data['api_id'], data['api_hash'])
+            client2 = TelegramClient("sessions/temp_name", data['api_id'], data['api_hash'])
             await client2.connect()
             if await client2.is_user_authorized():
                 me = await client2.get_me()
@@ -749,8 +862,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 elif me and me.username:
                     account_name = me.username
             await client2.disconnect()
-        except Exception as e:
-            logger.error(f"Error getting account name: {e}")
+        except:
             account_name = "بدون نام"
         
         user_id_str = str(user_id)
@@ -841,7 +953,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ اجرا ============
 def main():
     try:
-        # حذف webhook
         delete_webhook()
         
         print("=" * 60)
@@ -850,10 +961,8 @@ def main():
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
         
-        # ساخت اپلیکیشن
         application = Application.builder().token(TOKEN).build()
         
-        # اضافه کردن هندلرها
         application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
         application.add_handler(CallbackQueryHandler(list_selfs, pattern="^list_selfs$"))
         application.add_handler(CallbackQueryHandler(manage_self, pattern="^manage_"))
@@ -869,10 +978,7 @@ def main():
         print("💡 برای شروع از /start استفاده فرمایید.")
         print("=" * 60)
         
-        # اجرا
-        application.run_polling(
-            drop_pending_updates=True
-        )
+        application.run_polling(drop_pending_updates=True)
         
     except Exception as e:
         print(f"❌ خطا: {e}")
