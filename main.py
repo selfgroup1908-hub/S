@@ -4,7 +4,6 @@ import asyncio
 import os
 import json
 from datetime import datetime
-import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
@@ -68,12 +67,6 @@ def mask_string(s, show=5):
     if len(s) <= show:
         return s
     return s[:show] + "..." + s[-3:]
-
-def get_iran_time():
-    """دریافت زمان دقیق ایران با ثانیه"""
-    iran_tz = pytz.timezone('Asia/Tehran')
-    now = datetime.now(iran_tz)
-    return now.strftime("%Y/%m/%d %H:%M:%S")
 
 async def clear_user_session(user_id):
     if user_id in user_sessions:
@@ -148,36 +141,28 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
     
+    # ساختن دکمه‌های مدیریت برای هر سلف
+    keyboard = []
     text = f"""
 📋 *لیست سلف‌های ثبت شده ({len(selfs)})*
 
 """
-    for i, self_account in enumerate(selfs, 1):
+    
+    for i, self_account in enumerate(selfs):
         status = "✅ *فعال*" if self_account.get('active', True) else "❌ *غیرفعال*"
         phone = self_account.get('phone', 'نامشخص')
-        created = self_account.get('created', 'نامشخص')
+        active_time = self_account.get('active_time', 'تنظیم نشده')
+        
         text += f"""
-🔹 *سلف شماره {i}*
+🔹 *سلف شماره {i+1}*
    📱 شماره: `{phone}`
    📊 وضعیت: {status}
-   📅 تاریخ ایجاد: `{created}`
+   ⏰ ساعت فعال: `{active_time}`
 """
-        # دکمه‌های مدیریت برای هر سلف
-        if self_account.get('active', True):
-            text += f"\n   ⏰ *ساعت فعال:* {self_account.get('active_time', 'تنظیم نشده')}"
-        
-        text += "\n"
+        keyboard.append([InlineKeyboardButton(f"⚙️ مدیریت سلف {i+1}", callback_data=f"manage_{i}")])
     
-    keyboard = [
-        [InlineKeyboardButton("🔷 ایجاد سلف جدید", callback_data="new_session")],
-        [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-    ]
-    
-    # اضافه کردن دکمه‌های مدیریت برای هر سلف
-    for i, self_account in enumerate(selfs):
-        keyboard.insert(i, [
-            InlineKeyboardButton(f"⚙️ مدیریت سلف {i+1}", callback_data=f"manage_{i}")
-        ])
+    keyboard.append([InlineKeyboardButton("🔷 ایجاد سلف جدید", callback_data="new_session")])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="back")])
     
     await query.edit_message_text(
         text,
@@ -244,11 +229,14 @@ async def set_active_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='Markdown')
         return
     
-    # دریافت زمان دقیق ایران
-    iran_time = get_iran_time()
+    # دریافت زمان فعلی
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    iran_time = now + timedelta(hours=3, minutes=30)
+    time_str = iran_time.strftime("%Y/%m/%d %H:%M:%S")
     
     # ذخیره زمان در دیتا
-    selfs[index]['active_time'] = iran_time
+    selfs[index]['active_time'] = time_str
     selfs[index]['active'] = True
     save_data()
     
@@ -256,7 +244,7 @@ async def set_active_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ✅ *ساعت فعال با موفقیت ثبت شد!*
 
 📱 *شماره:* `{selfs[index].get('phone', 'نامشخص')}`
-⏰ *ساعت فعال:* `{iran_time}`
+⏰ *ساعت فعال:* `{time_str}`
 
 🔹 ساعت فعال برای این سلف با موفقیت تنظیم گردید.
 """
@@ -549,8 +537,11 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id_str not in self_data:
             self_data[user_id_str] = []
         
-        # دریافت زمان دقیق ایران
-        iran_time = get_iran_time()
+        # دریافت زمان فعلی
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        iran_time = now + timedelta(hours=3, minutes=30)
+        time_str = iran_time.strftime("%Y/%m/%d %H:%M:%S")
         
         self_data[user_id_str].append({
             "session": session_string,
@@ -558,8 +549,8 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "api_id": api_id,
             "api_hash": api_hash,
             "active": True,
-            "created": iran_time,
-            "active_time": iran_time
+            "created": time_str,
+            "active_time": time_str
         })
         save_data()
         
@@ -570,7 +561,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📱 *شماره:* `{phone}`
 🔑 *شناسه جلسه:* `{mask_string(session_string, 10)}`
-⏰ *ساعت فعال:* `{iran_time}`
+⏰ *ساعت فعال:* `{time_str}`
 
 🎯 سلف جدید به لیست شما اضافه گردید.
 """
@@ -649,7 +640,10 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id_str not in self_data:
             self_data[user_id_str] = []
         
-        iran_time = get_iran_time()
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        iran_time = now + timedelta(hours=3, minutes=30)
+        time_str = iran_time.strftime("%Y/%m/%d %H:%M:%S")
         
         self_data[user_id_str].append({
             "session": session_string,
@@ -657,8 +651,8 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "api_id": data['api_id'],
             "api_hash": data['api_hash'],
             "active": True,
-            "created": iran_time,
-            "active_time": iran_time
+            "created": time_str,
+            "active_time": time_str
         })
         save_data()
         
@@ -669,7 +663,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📱 *شماره:* `{data['phone']}`
 🔑 *شناسه جلسه:* `{mask_string(session_string, 10)}`
-⏰ *ساعت فعال:* `{iran_time}`
+⏰ *ساعت فعال:* `{time_str}`
 
 🎯 سلف جدید به لیست شما اضافه گردید.
 """
