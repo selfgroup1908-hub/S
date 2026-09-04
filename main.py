@@ -3,7 +3,7 @@ import re
 import asyncio
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
@@ -67,6 +67,12 @@ def mask_string(s, show=5):
     if len(s) <= show:
         return s
     return s[:show] + "..." + s[-3:]
+
+def get_iran_time():
+    """دریافت زمان دقیق ایران (UTC+3:30)"""
+    now = datetime.utcnow()
+    iran_time = now + timedelta(hours=3, minutes=30)
+    return iran_time.strftime("%Y/%m/%d %H:%M:%S")
 
 async def clear_user_session(user_id):
     if user_id in user_sessions:
@@ -141,12 +147,12 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return
     
-    # ساختن دکمه‌های مدیریت برای هر سلف
-    keyboard = []
     text = f"""
 📋 *لیست سلف‌های ثبت شده ({len(selfs)})*
 
 """
+    
+    keyboard = []
     
     for i, self_account in enumerate(selfs):
         status = "✅ *فعال*" if self_account.get('active', True) else "❌ *غیرفعال*"
@@ -229,11 +235,8 @@ async def set_active_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='Markdown')
         return
     
-    # دریافت زمان فعلی
-    from datetime import datetime, timedelta
-    now = datetime.utcnow()
-    iran_time = now + timedelta(hours=3, minutes=30)
-    time_str = iran_time.strftime("%Y/%m/%d %H:%M:%S")
+    # دریافت زمان دقیق ایران
+    time_str = get_iran_time()
     
     # ذخیره زمان در دیتا
     selfs[index]['active_time'] = time_str
@@ -537,11 +540,8 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id_str not in self_data:
             self_data[user_id_str] = []
         
-        # دریافت زمان فعلی
-        from datetime import datetime, timedelta
-        now = datetime.utcnow()
-        iran_time = now + timedelta(hours=3, minutes=30)
-        time_str = iran_time.strftime("%Y/%m/%d %H:%M:%S")
+        # دریافت زمان دقیق ایران
+        time_str = get_iran_time()
         
         self_data[user_id_str].append({
             "session": session_string,
@@ -640,10 +640,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id_str not in self_data:
             self_data[user_id_str] = []
         
-        from datetime import datetime, timedelta
-        now = datetime.utcnow()
-        iran_time = now + timedelta(hours=3, minutes=30)
-        time_str = iran_time.strftime("%Y/%m/%d %H:%M:%S")
+        time_str = get_iran_time()
         
         self_data[user_id_str].append({
             "session": session_string,
@@ -721,7 +718,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ لطفاً از دکمه‌های منو استفاده فرمایید.", parse_mode='Markdown')
 
 # ============ اجرا ============
-def main():
+async def main():
     try:
         delete_webhook()
         
@@ -752,13 +749,17 @@ def main():
         print("💡 برای شروع از /start استفاده فرمایید.")
         print("=" * 60)
         
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
+        # شروع پولینگ
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling(drop_pending_updates=True)
         
+        # نگه داشتن ربات در حال اجرا
+        while True:
+            await asyncio.sleep(1)
+            
     except Exception as e:
         print(f"❌ خطا: {e}")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
