@@ -69,17 +69,14 @@ def mask_string(s, show=5):
     return s[:show] + "..." + s[-3:]
 
 def get_iran_time():
-    """دریافت زمان دقیق ایران با ثانیه"""
     now = datetime.utcnow()
     iran_time = now + timedelta(hours=3, minutes=30)
     return iran_time
 
 def get_iran_time_str():
-    """دریافت زمان دقیق ایران به صورت رشته"""
     return get_iran_time().strftime("%H:%M:%S")
 
 def get_iran_date_str():
-    """دریافت تاریخ ایران"""
     return get_iran_time().strftime("%Y/%m/%d")
 
 async def clear_user_session(user_id):
@@ -95,7 +92,7 @@ async def clear_user_session(user_id):
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
     user = update.effective_user
-    name = user.first_name
+    name = user.first_name if user.first_name else "کاربر"
     user_id = str(user.id)
     
     self_count = len(self_data.get(user_id, []))
@@ -283,13 +280,17 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await client.is_user_authorized():
             me = await client.get_me()
             
+            first_name = me.first_name if me.first_name else "ندارد"
+            last_name = me.last_name if me.last_name else "ندارد"
+            username = f"@{me.username}" if me.username else "ندارد"
+            
             profile_text = f"""
 👤 *پروفایل اکانت*
 
 📱 *شماره:* `{phone}`
-👤 *نام:* {me.first_name or 'ندارد'}
-👤 *نام خانوادگی:* {me.last_name or 'ندارد'}
-👤 *یوزرنیم:* @{me.username if me.username else 'ندارد'}
+👤 *نام:* {first_name}
+👤 *نام خانوادگی:* {last_name}
+👤 *یوزرنیم:* {username}
 🆔 *آیدی:* `{me.id}`
 📊 *وضعیت ساعت:* {'🟢 فعال' if clock_active else '🔴 غیرفعال'}
 
@@ -783,7 +784,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         await update.message.reply_text(
-            f"❌ *رمز عبور اشتباه است.*\n\n{str(e)[:100]}\n\n📝 لطفاً مجدداً وارد فرمایید:",
+            f"❌ *رمز عبور اشتباه است.*\n\n{str(e)[:100]}",
             parse_mode='Markdown'
         )
 
