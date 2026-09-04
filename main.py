@@ -69,7 +69,6 @@ def mask_string(s, show=5):
     return s[:show] + "..." + s[-3:]
 
 def get_iran_time():
-    """دریافت زمان دقیق ایران (UTC+3:30)"""
     now = datetime.utcnow()
     iran_time = now + timedelta(hours=3, minutes=30)
     return iran_time.strftime("%Y/%m/%d %H:%M:%S")
@@ -235,10 +234,8 @@ async def set_active_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='Markdown')
         return
     
-    # دریافت زمان دقیق ایران
     time_str = get_iran_time()
     
-    # ذخیره زمان در دیتا
     selfs[index]['active_time'] = time_str
     selfs[index]['active'] = True
     save_data()
@@ -540,7 +537,6 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id_str not in self_data:
             self_data[user_id_str] = []
         
-        # دریافت زمان دقیق ایران
         time_str = get_iran_time()
         
         self_data[user_id_str].append({
@@ -728,10 +724,8 @@ def main():
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
         
-        # ساخت اپلیکیشن
         application = Application.builder().token(TOKEN).build()
         
-        # دکمه‌ها
         application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
         application.add_handler(CallbackQueryHandler(list_selfs, pattern="^list_selfs$"))
         application.add_handler(CallbackQueryHandler(manage_self, pattern="^manage_"))
@@ -740,21 +734,14 @@ def main():
         application.add_handler(CallbackQueryHandler(deactivate_self, pattern="^deactivate_"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
         
-        # دستور start
         application.add_handler(CommandHandler("start", start))
-        
-        # هندلر پیام‌ها
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
         
         print("✅ ربات با موفقیت راه‌اندازی شد.")
         print("💡 برای شروع از /start استفاده فرمایید.")
         print("=" * 60)
         
-        # اجرای ساده
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
+        application.run_polling(drop_pending_updates=True)
         
     except Exception as e:
         print(f"❌ خطا: {e}")
