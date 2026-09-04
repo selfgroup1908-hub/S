@@ -3,12 +3,14 @@ import re
 import asyncio
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError
 import urllib.request
+import sys
+import signal
 
 # ============ تنظیمات ============
 TOKEN = "8810050319:AAH5T1qehg7U-oplDB_yp4JVGZl6W866BzY"
@@ -69,14 +71,17 @@ def mask_string(s, show=5):
     return s[:show] + "..." + s[-3:]
 
 def get_iran_time():
-    now = datetime.utcnow()
+    """دریافت زمان ایران (فقط ساعت و دقیقه)"""
+    now = datetime.now(timezone.utc)
     iran_time = now + timedelta(hours=3, minutes=30)
     return iran_time
 
 def get_iran_time_str():
-    return get_iran_time().strftime("%H:%M:%S")
+    """دریافت زمان ایران به صورت ساعت:دقیقه (بدون ثانیه)"""
+    return get_iran_time().strftime("%H:%M")
 
 def get_iran_date_str():
+    """دریافت تاریخ ایران"""
     return get_iran_time().strftime("%Y/%m/%d")
 
 async def clear_user_session(user_id):
@@ -268,7 +273,6 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
     
-    # دریافت اطلاعات از تلگرام
     try:
         client = TelegramClient(
             self_account.get('session'),
@@ -348,15 +352,11 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='HTML')
         return
     
-    # دریافت زمان دقیق ایران
     time_str = get_iran_time_str()
-    date_str = get_iran_date_str()
     account_name = selfs[index].get('account_name', 'کاربر')
     
-    # ذخیره زمان در دیتا
     selfs[index]['active_time'] = time_str
     selfs[index]['clock_active'] = True
-    selfs[index]['last_update'] = f"{date_str} {time_str}"
     save_data()
     
     text = f"""
@@ -364,7 +364,6 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 👤 نام اکانت: {account_name}
 🕐 ساعت فعال: {time_str}
-📅 تاریخ: {date_str}
 
 ساعت برای این سلف با موفقیت فعال گردید.
 """
@@ -621,17 +620,14 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         
         # دریافت اطلاعات اکانت
-        client2 = TelegramClient(session_string, api_id, api_hash)
-        await client2.connect()
-        me = await client2.get_me()
-        
-        # چک کردن None بودن me
-        if me:
-            account_name = me.first_name if me.first_name else "کاربر"
-        else:
+        try:
+            client2 = TelegramClient(session_string, api_id, api_hash)
+            await client2.connect()
+            me = await client2.get_me()
+            account_name = me.first_name if me and me.first_name else "کاربر"
+            await client2.disconnect()
+        except:
             account_name = "کاربر"
-            
-        await client2.disconnect()
         
         user_id_str = str(user_id)
         if user_id_str not in self_data:
@@ -737,17 +733,14 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         
         # دریافت اطلاعات اکانت
-        client2 = TelegramClient(session_string, data['api_id'], data['api_hash'])
-        await client2.connect()
-        me = await client2.get_me()
-        
-        # چک کردن None بودن me
-        if me:
-            account_name = me.first_name if me.first_name else "کاربر"
-        else:
+        try:
+            client2 = TelegramClient(session_string, data['api_id'], data['api_hash'])
+            await client2.connect()
+            me = await client2.get_me()
+            account_name = me.first_name if me and me.first_name else "کاربر"
+            await client2.disconnect()
+        except:
             account_name = "کاربر"
-            
-        await client2.disconnect()
         
         user_id_str = str(user_id)
         if user_id_str not in self_data:
@@ -837,6 +830,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ اجرا ============
 def main():
     try:
+        # حذف webhook
         delete_webhook()
         
         print("=" * 60)
@@ -862,7 +856,10 @@ def main():
         print("💡 برای شروع از /start استفاده فرمایید.")
         print("=" * 60)
         
-        application.run_polling(drop_pending_updates=True)
+        # اجرا با تنظیمات ساده
+        application.run_polling(
+            drop_pending_updates=True
+        )
         
     except Exception as e:
         print(f"❌ خطا: {e}")
