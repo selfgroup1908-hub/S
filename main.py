@@ -486,7 +486,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ اجرا ============
 def main():
     try:
-        # حذف webhook قبل از شروع
+        # حذف webhook
         delete_webhook()
         
         print("=" * 60)
@@ -495,7 +495,7 @@ def main():
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
         
-        # ساخت اپلیکیشن با تنظیمات ویژه برای جلوگیری از Conflict
+        # ساخت اپلیکیشن
         application = Application.builder().token(TOKEN).build()
         
         # دکمه‌ها
@@ -512,14 +512,10 @@ def main():
         print("💡 برای شروع از /start استفاده کن.")
         print("=" * 60)
         
-        # اجرا با تنظیمات جلوگیری از Conflict
+        # اجرا با تنظیمات ساده شده
         application.run_polling(
             allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True,
-            timeout=30,
-            read_timeout=30,
-            write_timeout=30,
-            pool_timeout=30
+            drop_pending_updates=True
         )
         
     except Exception as e:
