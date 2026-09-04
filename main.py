@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 user_sessions = {}
 self_data = {}
-ad_data = {}
 
 # ============ فایل ذخیره اطلاعات ============
 DATA_FILE = "selfs.json"
@@ -82,31 +81,24 @@ async def clear_user_session(user_id):
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
     user = update.effective_user
-    mention = f"@{user.username}" if user.username else user.first_name
+    name = user.first_name
     user_id = str(user.id)
     
     self_count = len(self_data.get(user_id, []))
     
     text = f"""
-👤 **ربات شخصی عامر**
+🌟 **سلام {name} عزیز**
 
-سلام *{mention}* عزیز
+به ربات شخصی خودت خوش اومدی.
+همیشه کنارتم تا کارهاتو راه بندازی.
 
-به ربات شخصی خودت خوش آمدی.
-اینجا می‌تونی سلف‌های خودت رو مدیریت کنی.
+📊 تعداد سلف‌های ساخته شده: {self_count}
 
-📊 *آمار سلف‌های شما:*
-🔹 تعداد سلف‌های فعال: *{self_count}*
-
-📌 لطفاً یکی از گزینه‌های زیر را انتخاب کن:
+🔄 هر وقت خواستی یه سلف جدید بساز، دکمه زیر رو بزن.
 """
     
     keyboard = [
-        [InlineKeyboardButton("🆕 ساخت سلف جدید", callback_data="new_session")],
-        [
-            InlineKeyboardButton("📋 لیست سلف‌ها", callback_data="list_selfs"),
-            InlineKeyboardButton("📤 ارسال پیام", callback_data="manual_ad")
-        ]
+        [InlineKeyboardButton("🔷 ساخت سلف جدید", callback_data="new_session")]
     ]
     
     if edit and update.callback_query:
@@ -133,15 +125,15 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id] = {"step": "phone"}
     
     text = """
-🆕 *ساخت سلف جدید - مرحله ۱*
+📱 **مرحله ۱: شماره تلفن**
 
-📱 لطفاً *شماره تلفن* را وارد کن.
+لطفاً شماره تلفن مورد نظر را وارد کن.
 
-📌 *مثال:* `989123456789`
-(با کد کشور، بدون علامت +)
+مثال: `989123456789`
+(با کد کشور، بدون +)
 """
     
-    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
+    keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
     
     await query.edit_message_text(
         text,
@@ -162,7 +154,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not is_valid_phone(phone):
         await update.message.reply_text(
-            "❌ شماره نامعتبر!\n\n📌 مثال: `989123456789`",
+            "❌ شماره نامعتبر!\n\nمثال: `989123456789`",
             parse_mode='Markdown'
         )
         return
@@ -171,14 +163,15 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['step'] = "api_id"
     
     text = f"""
-✅ شماره `{phone}` با موفقیت ثبت شد.
+✅ شماره `{phone}` ثبت شد.
 
-🔑 *مرحله ۲:* لطفاً *API ID* را وارد کن.
+🔑 **مرحله ۲: API ID**
 
-💡 از سایت my.telegram.org دریافت کن.
+لطفاً API ID خود را وارد کن.
+(از سایت my.telegram.org دریافت کن)
 """
     
-    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
+    keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
     
     await update.message.reply_text(
         text,
@@ -203,14 +196,15 @@ async def handle_api_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['step'] = "api_hash"
     
     text = f"""
-✅ API ID `{text}` با موفقیت ثبت شد.
+✅ API ID `{text}` ثبت شد.
 
-🔐 *مرحله ۳:* لطفاً *API Hash* را وارد کن.
+🔐 **مرحله ۳: API Hash**
 
-💡 از سایت my.telegram.org دریافت کن.
+لطفاً API Hash خود را وارد کن.
+(از سایت my.telegram.org دریافت کن)
 """
     
-    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
+    keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
     
     await update.message.reply_text(
         text,
@@ -257,10 +251,10 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📝 لطفاً کد ۵ رقمی دریافت شده را وارد کن.
 
-📌 *مثال:* `12345` یا `1.2.3.4.5`
+مثال: `12345` یا `1.2.3.4.5`
 """
         
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
+        keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
         
         await context.bot.edit_message_text(
             chat_id=update.effective_chat.id,
@@ -292,7 +286,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not code.isdigit() or len(code) != 5:
         await update.message.reply_text(
-            "❌ کد باید ۵ رقم باشد.\n\n📌 مثال: `12345`",
+            "❌ کد باید ۵ رقم باشد.\n\nمثال: `12345`",
             parse_mode='Markdown'
         )
         return
@@ -336,18 +330,17 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await clear_user_session(user_id)
         
         text = f"""
-✅ *سلف با موفقیت ساخته شد!*
+✅ **سلف جدید ساخته شد!**
 
-📱 *شماره:* `{phone}`
-🔑 *شناسه جلسه:* `{mask_string(session_string, 10)}`
+📱 شماره: `{phone}`
+🔑 شناسه جلسه: `{mask_string(session_string, 10)}`
 
-🎯 سلف جدید به لیست شما اضافه شد.
+🎯 سلف جدید به لیست اضافه شد.
 """
         
         keyboard = [
-            [InlineKeyboardButton("🆕 ساخت سلف جدید", callback_data="new_session")],
-            [InlineKeyboardButton("📋 لیست سلف‌ها", callback_data="list_selfs")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
+            [InlineKeyboardButton("🔷 ساخت سلف جدید", callback_data="new_session")],
+            [InlineKeyboardButton("🏠 بازگشت به صفحه اصلی", callback_data="back")]
         ]
         
         await update.message.reply_text(
@@ -359,11 +352,13 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except SessionPasswordNeededError:
         user_sessions[user_id]['step'] = "password"
         text = """
-🔐 *حساب کاربری شما دارای رمز عبور دو مرحله‌ای است.*
+🔐 **رمز عبور دو مرحله‌ای**
 
-📝 لطفاً *رمز عبور* خود را وارد کن.
+حساب کاربری رمز عبور دو مرحله‌ای دارد.
+
+لطفاً رمز عبور خود را وارد کن.
 """
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
+        keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
         
         await update.message.reply_text(
             text,
@@ -429,18 +424,17 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await clear_user_session(user_id)
         
         text = f"""
-✅ *سلف با موفقیت ساخته شد!*
+✅ **سلف جدید ساخته شد!**
 
-📱 *شماره:* `{data['phone']}`
-🔑 *شناسه جلسه:* `{mask_string(session_string, 10)}`
+📱 شماره: `{data['phone']}`
+🔑 شناسه جلسه: `{mask_string(session_string, 10)}`
 
-🎯 سلف جدید به لیست شما اضافه شد.
+🎯 سلف جدید به لیست اضافه شد.
 """
         
         keyboard = [
-            [InlineKeyboardButton("🆕 ساخت سلف جدید", callback_data="new_session")],
-            [InlineKeyboardButton("📋 لیست سلف‌ها", callback_data="list_selfs")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
+            [InlineKeyboardButton("🔷 ساخت سلف جدید", callback_data="new_session")],
+            [InlineKeyboardButton("🏠 بازگشت به صفحه اصلی", callback_data="back")]
         ]
         
         await update.message.reply_text(
@@ -455,239 +449,6 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-# ============ ارسال پیام با سلف ============
-async def manual_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = str(query.from_user.id)
-    selfs = self_data.get(user_id, [])
-    active_selfs = [s for s in selfs if s.get('active', True)]
-    
-    if not active_selfs:
-        text = """
-❌ *هیچ سلف فعالی نداری!*
-
-🆕 لطفاً ابتدا یک سلف بساز.
-"""
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        return
-    
-    ad_data[query.from_user.id] = {"links": [], "step": "link", "mode": "ad"}
-    
-    text = """
-📤 *ارسال پیام با سلف - مرحله ۱*
-
-📎 لطفاً لینک گروه یا کاربر مورد نظر را ارسال کن.
-
-💡 می‌تونی *چندین لینک* ارسال کنی.
-✅ پس از اتمام، دکمه زیر رو فشار بده.
-
-📌 *مثال:*
-`https://t.me/username`
-"""
-    
-    keyboard = [
-        [InlineKeyboardButton("✅ اتمام ارسال لینک‌ها", callback_data="done_links")]
-    ]
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
-
-# ============ دریافت لینک ============
-async def handle_ad_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text.strip()
-    
-    if user_id not in ad_data or ad_data[user_id].get("step") != "link":
-        await update.message.reply_text("❌ لطفاً از دکمه ارسال پیام استفاده کن.", parse_mode='Markdown')
-        return
-    
-    if not text.startswith("https://t.me/") and not text.startswith("t.me/"):
-        await update.message.reply_text(
-            "❌ لینک نامعتبر است.\n\n📌 مثال: `https://t.me/username`",
-            parse_mode='Markdown'
-        )
-        return
-    
-    ad_data[user_id]["links"].append(text)
-    
-    await update.message.reply_text(
-        f"✅ لینک با موفقیت دریافت شد.\n\n📊 تعداد لینک‌ها: *{len(ad_data[user_id]['links'])}*",
-        parse_mode='Markdown'
-    )
-
-# ============ اتمام لینک‌ها ============
-async def done_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    
-    if user_id not in ad_data:
-        await query.edit_message_text("❌ خطا! لطفاً دوباره شروع کن.", parse_mode='Markdown')
-        return
-    
-    links = ad_data[user_id].get("links", [])
-    
-    if not links:
-        text = """
-❌ *هیچ لینکی وارد نشده است.*
-
-📌 لطفاً حداقل یک لینک ارسال کن.
-"""
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        return
-    
-    ad_data[user_id]["step"] = "text"
-    
-    text = f"""
-✅ *{len(links)} لینک با موفقیت ذخیره شد.*
-
-🔗 *لینک‌های ثبت شده:*
-{chr(10).join([f'• {l}' for l in links])}
-
-📤 *مرحله ۲:*
-📝 لطفاً *متن پیام* خود را ارسال کن.
-"""
-    
-    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
-
-# ============ دریافت متن پیام ============
-async def handle_ad_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text.strip()
-    
-    if user_id not in ad_data or ad_data[user_id].get("step") != "text":
-        await update.message.reply_text("❌ لطفاً از دکمه ارسال پیام استفاده کن.", parse_mode='Markdown')
-        return
-    
-    if not text:
-        await update.message.reply_text("❌ متن نمی‌تواند خالی باشد.", parse_mode='Markdown')
-        return
-    
-    ad_data[user_id]["text"] = text
-    
-    await start_sending_message(update, context, user_id)
-
-# ============ شروع ارسال پیام ============
-async def start_sending_message(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id):
-    data = ad_data.get(user_id, {})
-    links = data.get("links", [])
-    msg_text = data.get("text", "")
-    
-    user_id_str = str(user_id)
-    selfs = self_data.get(user_id_str, [])
-    active_selfs = [s for s in selfs if s.get('active', True)]
-    
-    await update.message.reply_text(
-        f"""
-🚀 *شروع ارسال پیام*
-
-📊 *آمار:*
-• تعداد سلف‌ها: *{len(active_selfs)}*
-• تعداد گیرنده‌ها: *{len(links)}*
-
-⏳ در حال ارسال...
-""",
-        parse_mode='Markdown'
-    )
-    
-    success_count = 0
-    fail_count = 0
-    
-    for self_account in active_selfs:
-        try:
-            client = TelegramClient(
-                self_account.get('session'),
-                self_account.get('api_id'),
-                self_account.get('api_hash')
-            )
-            await client.connect()
-            
-            if not await client.is_user_authorized():
-                continue
-            
-            for link in links:
-                try:
-                    entity = await client.get_entity(link)
-                    await client.send_message(entity, msg_text)
-                    success_count += 1
-                    await asyncio.sleep(2)
-                except Exception as e:
-                    fail_count += 1
-                    logger.error(f"Error sending to {link}: {e}")
-            
-            await client.disconnect()
-            
-        except Exception as e:
-            logger.error(f"Error with self account: {e}")
-    
-    if user_id in ad_data:
-        del ad_data[user_id]
-    
-    await update.message.reply_text(
-        f"""
-✅ *ارسال پیام با موفقیت انجام شد.*
-
-📊 *نتیجه نهایی:*
-• ✅ موفق: *{success_count}*
-• ❌ ناموفق: *{fail_count}*
-
-🔥 برای ارسال مجدد از منوی اصلی استفاده کن.
-""",
-        parse_mode='Markdown'
-    )
-
-# ============ لیست سلف‌ها ============
-async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = str(query.from_user.id)
-    selfs = self_data.get(user_id, [])
-    
-    if not selfs:
-        text = """
-📋 *لیست سلف‌ها*
-
-❌ شما هیچ سلفی نداری.
-
-🆕 از گزینه *"ساخت سلف جدید"* استفاده کن.
-"""
-    else:
-        text = f"""
-📋 *لیست سلف‌ها ({len(selfs)})*
-
-"""
-        for i, self_account in enumerate(selfs, 1):
-            status = "✅ فعال" if self_account.get('active', True) else "❌ غیرفعال"
-            text += f"{i}. 📱 شماره: `{mask_string(self_account.get('phone', 'نامشخص'))}`\n"
-            text += f"   • وضعیت: {status}\n"
-            text += f"   • شناسه جلسه: `{mask_string(self_account.get('session', ''), 8)}`\n\n"
-    
-    keyboard = [
-        [InlineKeyboardButton("🆕 ساخت سلف جدید", callback_data="new_session")],
-        [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-    ]
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
-
 # ============ بازگشت ============
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -695,8 +456,6 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     await clear_user_session(user_id)
-    if user_id in ad_data:
-        del ad_data[user_id]
     
     await main_menu(update, context, edit=True)
 
@@ -708,7 +467,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # ساخت سلف
     if user_id in user_sessions:
         step = user_sessions[user_id].get("step")
         if step == "phone":
@@ -723,19 +481,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_password(update, context)
         return
     
-    # ارسال پیام
-    if user_id in ad_data:
-        mode = ad_data[user_id].get("mode", "ad")
-        step = ad_data[user_id].get("step")
-        
-        if mode == "ad" or mode == "manual_ad":
-            if step == "link":
-                await handle_ad_link(update, context)
-            elif step == "text":
-                await handle_ad_text(update, context)
-        return
-    
-    await update.message.reply_text("❌ لطفاً از دکمه‌های منو استفاده کن.", parse_mode='Markdown')
+    await update.message.reply_text("❌ لطفاً از دکمه ساخت سلف استفاده کن.", parse_mode='Markdown')
 
 # ============ اجرا ============
 def main():
@@ -743,7 +489,7 @@ def main():
         delete_webhook()
         
         print("=" * 60)
-        print("👤 ربات شخصی عامر")
+        print("🌟 ربات شخصی")
         print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
@@ -752,9 +498,6 @@ def main():
         
         # دکمه‌ها
         application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
-        application.add_handler(CallbackQueryHandler(manual_ad, pattern="^manual_ad$"))
-        application.add_handler(CallbackQueryHandler(list_selfs, pattern="^list_selfs$"))
-        application.add_handler(CallbackQueryHandler(done_links, pattern="^done_links$"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
         
         # دستور start
