@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError
 from telethon.tl.functions.account import UpdateProfileRequest
 import urllib.request
@@ -195,14 +196,14 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
     self_count = len(self_data.get(user_id, []))
     
     text = f"""
-🌟 ربات مدیریت حساب‌های شخصی
+🌟 <b>ربات مدیریت حساب‌های شخصی</b>
 
-جناب {name} گرامی
+<b>جناب {name} گرامی</b>
 
 با سلام و احترام، به ربات مدیریت حساب‌های شخصی خود خوش آمدید.
 این ربات به شما امکان مدیریت سلف‌های تلگرام را می‌دهد.
 
-تعداد سلف‌های ثبت شده: {self_count}
+<b>تعداد سلف‌های ثبت شده: {self_count}</b>
 
 در صورت نیاز به ایجاد سلف جدید، از دکمه زیر استفاده فرمایید.
 """
@@ -239,9 +240,9 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not selfs:
         text = """
-📋 لیست سلف‌ها
+📋 <b>لیست سلف‌ها</b>
 
-❌ هیچ سلفی ثبت نشده است.
+❌ <b>هیچ سلفی ثبت نشده است.</b>
 
 لطفاً از گزینه "ایجاد سلف جدید" استفاده فرمایید.
 """
@@ -253,7 +254,7 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     text = f"""
-📋 لیست سلف‌های ثبت شده ({len(selfs)})
+📋 <b>لیست سلف‌های ثبت شده ({len(selfs)})</b>
 
 """
     
@@ -265,14 +266,14 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         account_name = self_account.get('account_name', 'بدون نام')
         clock_active = self_account.get('clock_active', False)
         
-        clock_status = "🟢 فعال" if clock_active else "🔴 غیرفعال"
+        clock_status = "🟢 <b>فعال</b>" if clock_active else "🔴 <b>غیرفعال</b>"
         time_display = f"{account_name} {active_time}" if active_time != 'تنظیم نشده' else f"{account_name} - ساعت تنظیم نشده"
         
         text += f"""
-🔹 سلف شماره {i+1}
-   📱 شماره: {phone}
-   👤 نام: {account_name}
-   🕐 ساعت: {time_display}
+🔹 <b>سلف شماره {i+1}</b>
+   📱 شماره: <code>{phone}</code>
+   👤 نام: <b>{account_name}</b>
+   🕐 ساعت: <code>{time_display}</code>
    📊 وضعیت ساعت: {clock_status}
 """
         keyboard.append([InlineKeyboardButton(f"⚙️ مدیریت سلف {i+1}", callback_data=f"manage_{i}")])
@@ -296,7 +297,7 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='HTML')
+        await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
         return
     
     self_account = selfs[index]
@@ -306,14 +307,14 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active_time = self_account.get('active_time', 'تنظیم نشده')
     
     time_display = f"{account_name} {active_time}" if active_time != 'تنظیم نشده' else f"{account_name} - ساعت تنظیم نشده"
-    clock_status = "🟢 فعال" if clock_active else "🔴 غیرفعال"
+    clock_status = "🟢 <b>فعال</b>" if clock_active else "🔴 <b>غیرفعال</b>"
     
     text = f"""
-⚙️ مدیریت سلف شماره {index + 1}
+⚙️ <b>مدیریت سلف شماره {index + 1}</b>
 
-📱 شماره: {phone}
-👤 نام اکانت: {account_name}
-🕐 ساعت: {time_display}
+📱 شماره: <code>{phone}</code>
+👤 نام اکانت: <b>{account_name}</b>
+🕐 ساعت: <code>{time_display}</code>
 📊 وضعیت: {clock_status}
 
 لطفاً یکی از گزینه‌های زیر را انتخاب فرمایید:
@@ -346,7 +347,7 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='HTML')
+        await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
         return
     
     self_account = selfs[index]
@@ -355,11 +356,11 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clock_active = self_account.get('clock_active', False)
     
     text = f"""
-👤 تنظیم پروفایل سلف شماره {index + 1}
+👤 <b>تنظیم پروفایل سلف شماره {index + 1}</b>
 
-📱 شماره: {phone}
-👤 نام اکانت: {account_name}
-📊 وضعیت ساعت: {'🟢 فعال' if clock_active else '🔴 غیرفعال'}
+📱 شماره: <code>{phone}</code>
+👤 نام اکانت: <b>{account_name}</b>
+📊 وضعیت ساعت: {'🟢 <b>فعال</b>' if clock_active else '🔴 <b>غیرفعال</b>'}
 
 در حال دریافت اطلاعات پروفایل...
 """
@@ -367,7 +368,6 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, parse_mode='HTML')
     
     try:
-        from telethon.tl.types import StringSession
         client = TelegramClient(StringSession(self_account.get('session')), self_account.get('api_id'), self_account.get('api_hash'))
         await client.connect()
         
@@ -379,14 +379,14 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
             username = f"@{me.username}" if me.username else "ندارد"
             
             profile_text = f"""
-👤 پروفایل اکانت
+👤 <b>پروفایل اکانت</b>
 
-📱 شماره: {phone}
-👤 نام: {first_name}
-👤 نام خانوادگی: {last_name}
-👤 یوزرنیم: {username}
-🆔 آیدی: {me.id}
-📊 وضعیت ساعت: {'🟢 فعال' if clock_active else '🔴 غیرفعال'}
+📱 شماره: <code>{phone}</code>
+👤 نام: <b>{first_name}</b>
+👤 نام خانوادگی: <b>{last_name}</b>
+👤 یوزرنیم: <b>{username}</b>
+🆔 آیدی: <code>{me.id}</code>
+📊 وضعیت ساعت: {'🟢 <b>فعال</b>' if clock_active else '🔴 <b>غیرفعال</b>'}
 
 اطلاعات پروفایل با موفقیت دریافت شد.
 """
@@ -401,7 +401,11 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         else:
             await client.disconnect()
-            text = "❌ اکانت معتبر نیست!\n\nلطفاً مجدداً سلف را ایجاد کنید."
+            text = """
+❌ <b>اکانت معتبر نیست!</b>
+
+لطفاً مجدداً سلف را ایجاد کنید.
+"""
             keyboard = [
                 [InlineKeyboardButton("🔙 بازگشت به مدیریت", callback_data=f"manage_{index}")],
                 [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
@@ -410,7 +414,11 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     except Exception as e:
         logger.error(f"Error getting profile: {e}")
-        text = f"❌ خطا در دریافت پروفایل!\n\n{str(e)[:200]}"
+        text = f"""
+❌ <b>خطا در دریافت پروفایل!</b>
+
+{str(e)[:200]}
+"""
         keyboard = [
             [InlineKeyboardButton("🔙 بازگشت به مدیریت", callback_data=f"manage_{index}")],
             [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
@@ -427,7 +435,7 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='HTML')
+        await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
         return
     
     self_account = selfs[index]
@@ -451,16 +459,16 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
             asyncio.create_task(clock_loop(user_id, session_string, api_id, api_hash))
         
         text = f"""
-✅ ساعت با موفقیت فعال شد!
+✅ <b>ساعت با موفقیت فعال شد!</b>
 
-👤 نام اکانت: {selfs[index].get('account_name', 'کاربر')}
-🕐 ساعت فعال: {time_str}
+👤 نام اکانت: <b>{selfs[index].get('account_name', 'کاربر')}</b>
+🕐 ساعت فعال: <code>{time_str}</code>
 
 ساعت برای این سلف با موفقیت فعال گردید.
 """
     else:
         text = """
-❌ خطا در فعال کردن ساعت!
+❌ <b>خطا در فعال کردن ساعت!</b>
 
 لطفاً مطمئن شوید که اکانت معتبر است و دوباره تلاش کنید.
 """
@@ -482,7 +490,7 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='HTML')
+        await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
         return
     
     self_account = selfs[index]
@@ -503,15 +511,15 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clock_tasks[user_id] = False
         
         text = f"""
-❌ ساعت با موفقیت غیرفعال شد!
+❌ <b>ساعت با موفقیت غیرفعال شد!</b>
 
-👤 نام اکانت: {account_name}
+👤 نام اکانت: <b>{account_name}</b>
 
 ساعت برای این سلف با موفقیت غیرفعال گردید.
 """
     else:
         text = """
-❌ خطا در غیرفعال کردن ساعت!
+❌ <b>خطا در غیرفعال کردن ساعت!</b>
 
 لطفاً مطمئن شوید که اکانت معتبر است و دوباره تلاش کنید.
 """
@@ -533,13 +541,13 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id] = {"step": "phone"}
     
     text = """
-📱 مرحله اول: وارد کردن شماره تلفن
+📱 <b>مرحله اول: وارد کردن شماره تلفن</b>
 
 لطفاً شماره تلفن مورد نظر را به همراه کد کشور وارد فرمایید.
 
-مثال: 989123456789
+<b>مثال:</b> <code>989123456789</code>
 
-تذکر: شماره را بدون علامت (+) وارد نمایید.
+⚠️ <b>تذکر:</b> شماره را بدون علامت (+) وارد نمایید.
 """
     
     keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
@@ -552,14 +560,14 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
     if user_id not in user_sessions or user_sessions[user_id].get("step") != "phone":
-        await update.message.reply_text("❌ لطفاً از دکمه ایجاد سلف استفاده فرمایید.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>لطفاً از دکمه ایجاد سلف استفاده فرمایید.</b>", parse_mode='HTML')
         return
     
     phone = re.sub(r'[^0-9+]', '', text)
     
     if not is_valid_phone(phone):
         await update.message.reply_text(
-            "❌ شماره تلفن نامعتبر است!\n\nلطفاً شماره را به صورت صحیح وارد نمایید.\nمثال: 989123456789",
+            "❌ <b>شماره تلفن نامعتبر است!</b>\n\nلطفاً شماره را به صورت صحیح وارد نمایید.\n<b>مثال:</b> <code>989123456789</code>",
             parse_mode='HTML'
         )
         return
@@ -568,11 +576,11 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['step'] = "api_id"
     
     text = f"""
-✅ شماره تلفن با موفقیت ثبت شد.
+✅ <b>شماره تلفن با موفقیت ثبت شد.</b>
 
-📱 شماره: {phone}
+📱 شماره: <code>{phone}</code>
 
-🔑 مرحله دوم: وارد کردن API ID
+🔑 <b>مرحله دوم: وارد کردن API ID</b>
 
 لطفاً API ID خود را از سایت my.telegram.org دریافت و وارد فرمایید.
 """
@@ -587,22 +595,22 @@ async def handle_api_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
     if user_id not in user_sessions or user_sessions[user_id].get("step") != "api_id":
-        await update.message.reply_text("❌ لطفاً از دکمه ایجاد سلف استفاده فرمایید.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>لطفاً از دکمه ایجاد سلف استفاده فرمایید.</b>", parse_mode='HTML')
         return
     
     if not text.isdigit():
-        await update.message.reply_text("❌ API ID باید عدد باشد.\n\nلطفاً مجدداً وارد نمایید.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>API ID باید عدد باشد.</b>\n\nلطفاً مجدداً وارد نمایید.", parse_mode='HTML')
         return
     
     user_sessions[user_id]['api_id'] = int(text)
     user_sessions[user_id]['step'] = "api_hash"
     
     text = f"""
-✅ API ID با موفقیت ثبت شد.
+✅ <b>API ID با موفقیت ثبت شد.</b>
 
-🔑 API ID: {text}
+🔑 API ID: <code>{text}</code>
 
-🔐 مرحله سوم: وارد کردن API Hash
+🔐 <b>مرحله سوم: وارد کردن API Hash</b>
 
 لطفاً API Hash خود را از سایت my.telegram.org دریافت و وارد فرمایید.
 """
@@ -617,20 +625,19 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
     if user_id not in user_sessions or user_sessions[user_id].get("step") != "api_hash":
-        await update.message.reply_text("❌ لطفاً از دکمه ایجاد سلف استفاده فرمایید.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>لطفاً از دکمه ایجاد سلف استفاده فرمایید.</b>", parse_mode='HTML')
         return
     
     if len(text) < 30:
-        await update.message.reply_text("❌ API Hash باید حداقل 30 کاراکتر باشد.\n\nلطفاً مجدداً وارد نمایید.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>API Hash باید حداقل 30 کاراکتر باشد.</b>\n\nلطفاً مجدداً وارد نمایید.", parse_mode='HTML')
         return
     
     user_sessions[user_id]['api_hash'] = text
     user_sessions[user_id]['step'] = "code"
     
-    msg = await update.message.reply_text("⏳ در حال ارسال کد تایید...\n\nلطفاً چند لحظه صبر فرمایید.", parse_mode='HTML')
+    msg = await update.message.reply_text("⏳ <b>در حال ارسال کد تایید...</b>\n\nلطفاً چند لحظه صبر فرمایید.", parse_mode='HTML')
     
     try:
-        from telethon.tl.types import StringSession
         data = user_sessions[user_id]
         phone = data['phone']
         api_id = data['api_id']
@@ -645,13 +652,13 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_sessions[user_id]['msg_id'] = msg.message_id
         
         text = f"""
-✅ کد تایید با موفقیت ارسال شد.
+✅ <b>کد تایید با موفقیت ارسال شد.</b>
 
-📩 کد ۵ رقمی به شماره {phone} ارسال گردید.
+📩 کد ۵ رقمی به شماره <code>{phone}</code> ارسال گردید.
 
 📝 لطفاً کد دریافتی را وارد فرمایید.
 
-مثال: 12345 یا 1.2.3.4.5
+<b>مثال:</b> <code>12345</code> یا <code>1.2.3.4.5</code>
 """
         
         keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
@@ -668,7 +675,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.edit_message_text(
             chat_id=update.effective_chat.id,
             message_id=msg.message_id,
-            text=f"❌ خطا در ارسال کد: {str(e)[:200]}",
+            text=f"❌ <b>خطا در ارسال کد:</b> {str(e)[:200]}",
             parse_mode='HTML'
         )
         await clear_user_session(user_id)
@@ -679,14 +686,14 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_code = update.message.text.strip()
     
     if user_id not in user_sessions or user_sessions[user_id].get("step") != "code":
-        await update.message.reply_text("❌ لطفاً از دکمه ایجاد سلف استفاده فرمایید.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>لطفاً از دکمه ایجاد سلف استفاده فرمایید.</b>", parse_mode='HTML')
         return
     
     code = clean_code(raw_code)
     
     if not code.isdigit() or len(code) != 5:
         await update.message.reply_text(
-            "❌ کد باید ۵ رقم باشد.\n\nمثال: 12345",
+            "❌ <b>کد باید ۵ رقم باشد.</b>\n\n<b>مثال:</b> <code>12345</code>",
             parse_mode='HTML'
         )
         return
@@ -695,12 +702,11 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     client = data.get('client')
     
     if not client:
-        await update.message.reply_text("❌ اتصال معتبر نیست.\n\nلطفاً مجدداً تلاش فرمایید.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>اتصال معتبر نیست.</b>\n\nلطفاً مجدداً تلاش فرمایید.", parse_mode='HTML')
         await clear_user_session(user_id)
         return
     
     try:
-        from telethon.tl.types import StringSession
         phone = data['phone']
         api_id = data['api_id']
         api_hash = data['api_hash']
@@ -748,11 +754,11 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await clear_user_session(user_id)
         
         text = f"""
-✅ سلف جدید با موفقیت ایجاد شد!
+✅ <b>سلف جدید با موفقیت ایجاد شد!</b>
 
-📱 شماره: {phone}
-👤 نام اکانت: {account_name}
-🔑 شناسه جلسه: {mask_string(session_string, 10)}
+📱 شماره: <code>{phone}</code>
+👤 نام اکانت: <b>{account_name}</b>
+🔑 شناسه جلسه: <code>{mask_string(session_string, 10)}</code>
 
 سلف جدید به لیست شما اضافه گردید.
 """
@@ -768,7 +774,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except SessionPasswordNeededError:
         user_sessions[user_id]['step'] = "password"
         text = """
-🔐 رمز عبور دو مرحله‌ای
+🔐 <b>رمز عبور دو مرحله‌ای</b>
 
 حساب کاربری مورد نظر دارای رمز عبور دو مرحله‌ای می‌باشد.
 
@@ -781,13 +787,13 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except PhoneCodeExpiredError:
         await client.send_code_request(phone)
         await update.message.reply_text(
-            "🔄 کد قبلی منقضی شده است.\n\n📩 کد جدید ارسال گردید.\n\n📝 لطفاً کد جدید را وارد فرمایید:",
+            "🔄 <b>کد قبلی منقضی شده است.</b>\n\n📩 کد جدید ارسال گردید.\n\n📝 لطفاً کد جدید را وارد فرمایید:",
             parse_mode='HTML'
         )
         
     except Exception as e:
         await update.message.reply_text(
-            f"❌ خطا: {str(e)[:200]}",
+            f"❌ <b>خطا:</b> {str(e)[:200]}",
             parse_mode='HTML'
         )
         await clear_user_session(user_id)
@@ -798,19 +804,18 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     password = update.message.text.strip()
     
     if user_id not in user_sessions or user_sessions[user_id].get("step") != "password":
-        await update.message.reply_text("❌ لطفاً از دکمه ایجاد سلف استفاده فرمایید.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>لطفاً از دکمه ایجاد سلف استفاده فرمایید.</b>", parse_mode='HTML')
         return
     
     data = user_sessions[user_id]
     client = data.get('client')
     
     if not client:
-        await update.message.reply_text("❌ اتصال معتبر نیست.\n\nلطفاً مجدداً تلاش فرمایید.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>اتصال معتبر نیست.</b>\n\nلطفاً مجدداً تلاش فرمایید.", parse_mode='HTML')
         await clear_user_session(user_id)
         return
     
     try:
-        from telethon.tl.types import StringSession
         await client.sign_in(password=password)
         session_string = client.session.save()
         await client.disconnect()
@@ -854,11 +859,11 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await clear_user_session(user_id)
         
         text = f"""
-✅ سلف جدید با موفقیت ایجاد شد!
+✅ <b>سلف جدید با موفقیت ایجاد شد!</b>
 
-📱 شماره: {data['phone']}
-👤 نام اکانت: {account_name}
-🔑 شناسه جلسه: {mask_string(session_string, 10)}
+📱 شماره: <code>{data['phone']}</code>
+👤 نام اکانت: <b>{account_name}</b>
+🔑 شناسه جلسه: <code>{mask_string(session_string, 10)}</code>
 
 سلف جدید به لیست شما اضافه گردید.
 """
@@ -873,7 +878,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         await update.message.reply_text(
-            f"❌ رمز عبور اشتباه است.\n\n{str(e)[:100]}",
+            f"❌ <b>رمز عبور اشتباه است.</b>\n\n{str(e)[:100]}",
             parse_mode='HTML'
         )
 
@@ -909,7 +914,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_password(update, context)
         return
     
-    await update.message.reply_text("❌ لطفاً از دکمه‌های منو استفاده فرمایید.", parse_mode='HTML')
+    await update.message.reply_text("❌ <b>لطفاً از دکمه‌های منو استفاده فرمایید.</b>", parse_mode='HTML')
 
 # ============ اجرا ============
 def main():
