@@ -429,7 +429,6 @@ async def handle_clock_profile_count(update: Update, context: ContextTypes.DEFAU
     api_hash = self_account.get('api_hash')
     account_name = self_account.get('account_name', 'کاربر')
     
-    # ارسال پیام شروع
     await update.message.reply_text(
         f"""
 🚀 <b>شروع ساعت پروفایل</b>
@@ -464,7 +463,6 @@ async def handle_clock_profile_count(update: Update, context: ContextTypes.DEFAU
 # ============ ساعت پروفایل با لوگو ============
 async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, chat_id, context, count):
     try:
-        # بررسی وجود Pillow
         try:
             from PIL import Image, ImageDraw, ImageFont
             import io
@@ -487,6 +485,7 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
         
         success_count = 0
         status_msg = None
+        wait_msg = None
         
         for i in range(count):
             try:
@@ -504,16 +503,13 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
                 
                 time_str = get_iran_time_str()
                 
-                # ساخت لوگوی خفن با ساعت
                 img = Image.new('RGB', (600, 300), color=(20, 20, 30))
                 d = ImageDraw.Draw(img)
                 
-                # پس‌زمینه گرادینت
                 for y in range(300):
                     color = (30 + y//3, 20 + y//2, 40 + y//2)
                     d.line([(0, y), (600, y)], fill=color)
                 
-                # ساعت با فونت بزرگ
                 try:
                     font = ImageFont.truetype("arial.ttf", 100)
                 except:
@@ -521,15 +517,12 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
                 
                 d.text((50, 80), time_str, font=font, fill=(255, 215, 0))
                 
-                # اسم اکانت زیر ساعت
                 try:
                     font_small = ImageFont.truetype("arial.ttf", 30)
                 except:
                     font_small = ImageFont.load_default()
                 
                 d.text((50, 200), f"@{account_name}", font=font_small, fill=(200, 200, 200))
-                
-                # حاشیه طلایی
                 d.rectangle([(5, 5), (595, 295)], outline=(255, 215, 0), width=2)
                 
                 img_bytes = io.BytesIO()
@@ -560,19 +553,37 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
                 
             except FloodWaitError as e:
                 wait_time = min(e.seconds, 300)
-                if not status_msg:
-                    status_msg = await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
+                
+                # حذف پیام قبلی محدودیت
+                if wait_msg:
+                    try:
+                        await context.bot.delete_message(chat_id, wait_msg.message_id)
+                    except:
+                        pass
+                    wait_msg = None
+                
+                # ارسال پیام جدید با تایمر
+                wait_msg = await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
                 
                 for remaining in range(wait_time, 0, -1):
                     try:
                         await context.bot.edit_message_text(
                             f"⏳ محدودیت تلگرام، {remaining} ثانیه صبر...",
                             chat_id=chat_id,
-                            message_id=status_msg.message_id
+                            message_id=wait_msg.message_id
                         )
                     except:
                         pass
                     await asyncio.sleep(1)
+                
+                # بعد از تموم شدن تایمر، پیام رو پاک کن
+                if wait_msg:
+                    try:
+                        await context.bot.delete_message(chat_id, wait_msg.message_id)
+                    except:
+                        pass
+                    wait_msg = None
+                
                 await asyncio.sleep(5)
                 
             except Exception as e:
@@ -891,7 +902,6 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     total_count = len(files) * count
     days_needed = (total_count + 499) // 500
     
-    # ارسال پیام شروع با دکمه لغو
     await update.message.reply_text(
         f"""
 🚀 <b>شروع تنظیم پروفایل</b>
@@ -999,6 +1009,7 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
         today_count = 0
         day = 1
         status_msg = None
+        wait_msg = None
         
         for i in range(count):
             if user_id in profile_status and profile_status[user_id] == 'cancel':
@@ -1051,19 +1062,37 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
                     
             except FloodWaitError as e:
                 wait_time = min(e.seconds, 300)
-                if not status_msg:
-                    status_msg = await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
+                
+                # حذف پیام قبلی محدودیت
+                if wait_msg:
+                    try:
+                        await context.bot.delete_message(chat_id, wait_msg.message_id)
+                    except:
+                        pass
+                    wait_msg = None
+                
+                # ارسال پیام جدید با تایمر
+                wait_msg = await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
                 
                 for remaining in range(wait_time, 0, -1):
                     try:
                         await context.bot.edit_message_text(
                             f"⏳ محدودیت تلگرام، {remaining} ثانیه صبر...",
                             chat_id=chat_id,
-                            message_id=status_msg.message_id
+                            message_id=wait_msg.message_id
                         )
                     except:
                         pass
                     await asyncio.sleep(1)
+                
+                # بعد از تموم شدن تایمر، پیام رو پاک کن
+                if wait_msg:
+                    try:
+                        await context.bot.delete_message(chat_id, wait_msg.message_id)
+                    except:
+                        pass
+                    wait_msg = None
+                
                 await asyncio.sleep(5)
                 fail_count += 1
                 
