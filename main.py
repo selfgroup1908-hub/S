@@ -13,6 +13,8 @@ from telethon.tl.functions.account import UpdateProfileRequest, UpdateUsernameRe
 from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
 from telethon.tl.types import InputPhoto, MessageMediaPhoto, MessageMediaDocument
 import urllib.request
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 # ============ تنظیمات ============
 TOKEN = "8810050319:AAH5T1qehg7U-oplDB_yp4JVGZl6W866BzY"
@@ -194,198 +196,6 @@ async def clock_loop(user_id, session_string, api_id, api_hash):
         except Exception as e:
             logger.error(f"Error in clock loop: {e}")
             await asyncio.sleep(1)
-
-# ============ ساعت پروفایل با لوگو ============
-async def clock_profile_with_logo(session_string, api_id, api_hash, chat_id, context, count):
-    try:
-        client = TelegramClient(StringSession(session_string), api_id, api_hash)
-        await client.connect()
-        
-        if not await client.is_user_authorized():
-            await client.disconnect()
-            await context.bot.send_message(chat_id, "❌ اکانت معتبر نیست!")
-            return
-        
-        me = await client.get_me()
-        account_name = me.first_name if me.first_name else "کاربر"
-        
-        await client.disconnect()
-        
-        success_count = 0
-        
-        for i in range(count):
-            try:
-                client = TelegramClient(StringSession(session_string), api_id, api_hash)
-                await client.connect()
-                
-                if not await client.is_user_authorized():
-                    await client.disconnect()
-                    await context.bot.send_message(chat_id, "❌ اکانت معتبر نیست!")
-                    return
-                
-                import io
-                from PIL import Image, ImageDraw, ImageFont
-                
-                time_str = get_iran_time_str()
-                
-                # ساخت لوگوی خفن با ساعت
-                img = Image.new('RGB', (600, 300), color=(20, 20, 30))
-                d = ImageDraw.Draw(img)
-                
-                # پس‌زمینه گرادینت
-                for y in range(300):
-                    color = (30 + y//3, 20 + y//2, 40 + y//2)
-                    d.line([(0, y), (600, y)], fill=color)
-                
-                # ساعت با فونت بزرگ
-                try:
-                    font = ImageFont.truetype("arial.ttf", 100)
-                except:
-                    font = ImageFont.load_default()
-                
-                # سایه ساعت
-                d.text((55, 85), time_str, font=font, fill=(0, 0, 0, 100))
-                d.text((50, 80), time_str, font=font, fill=(255, 215, 0))
-                
-                # اسم اکانت زیر ساعت
-                try:
-                    font_small = ImageFont.truetype("arial.ttf", 30)
-                except:
-                    font_small = ImageFont.load_default()
-                
-                d.text((50, 200), f"@{account_name}", font=font_small, fill=(200, 200, 200))
-                
-                # حاشیه طلایی
-                d.rectangle([(5, 5), (595, 295)], outline=(255, 215, 0), width=2)
-                
-                img_bytes = io.BytesIO()
-                img.save(img_bytes, format='PNG')
-                img_bytes.seek(0)
-                
-                file = await client.upload_file(img_bytes)
-                await client(UploadProfilePhotoRequest(file=file))
-                
-                await client.disconnect()
-                
-                success_count += 1
-                await context.bot.send_message(chat_id, f"✅ {success_count} از {count} - ساعت {time_str} تنظیم شد")
-                
-                if i < count - 1:
-                    await asyncio.sleep(60)
-                
-            except FloodWaitError as e:
-                wait_time = min(e.seconds, 300)
-                # تایمر دیجیتال
-                for remaining in range(wait_time, 0, -1):
-                    await context.bot.edit_message_text(
-                        f"⏳ محدودیت تلگرام، {remaining} ثانیه صبر...",
-                        chat_id=chat_id,
-                        message_id=status_msg_id
-                    )
-                    await asyncio.sleep(1)
-                await asyncio.sleep(5)
-                
-            except Exception as e:
-                logger.error(f"Error in clock profile: {e}")
-                await asyncio.sleep(10)
-        
-        await context.bot.send_message(
-            chat_id,
-            f"✅ ساعت پروفایل با موفقیت انجام شد!\nتنظیم شده: {success_count} از {count}"
-        )
-        
-    except Exception as e:
-        logger.error(f"Error in clock_profile_with_logo: {e}")
-        await context.bot.send_message(chat_id, f"❌ خطا: {str(e)[:200]}")
-
-# ============ توابع تنظیم پروفایل با محدودیت روزانه ============
-async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_path, count, user_id, chat_id, context, file_index, total_files):
-    """تنظیم پروفایل با محدودیت روزانه - حداکثر 500 در روز"""
-    try:
-        client = TelegramClient(StringSession(session_string), api_id, api_hash)
-        await client.connect()
-        
-        if not await client.is_user_authorized():
-            await client.disconnect()
-            await context.bot.send_message(chat_id, "❌ اکانت معتبر نیست!")
-            return False, 0, 0, 0
-        
-        max_per_day = 500  # حداکثر 500 در روز
-        success_count = 0
-        fail_count = 0
-        today_count = 0
-        day = 1
-        
-        for i in range(count):
-            # چک کردن لغو
-            if user_id in profile_status and profile_status[user_id] == 'cancel':
-                await context.bot.send_message(
-                    chat_id,
-                    f"❌ عملیات لغو شد!\nتنظیم شده: {success_count}\nناموفق: {fail_count}"
-                )
-                await client.disconnect()
-                return False, success_count, fail_count, day
-            
-            # اگر امروز به حد مجاز رسید، روز بعد
-            if today_count >= max_per_day:
-                day += 1
-                today_count = 0
-                await context.bot.send_message(
-                    chat_id,
-                    f"📅 روز {day} شروع شد - باقی‌مانده: {count - success_count}"
-                )
-                # صبر بین روزها
-                await asyncio.sleep(60)
-            
-            try:
-                await client(UploadProfilePhotoRequest(
-                    file=await client.upload_file(file_path)
-                ))
-                success_count += 1
-                today_count += 1
-                
-                # گزارش هر بار
-                await context.bot.send_message(
-                    chat_id,
-                    f"📸 فایل {file_index} از {total_files} - شماره {success_count} از {count} (روز {day}) تنظیم شد"
-                )
-                
-                # محدودیت زمانی
-                if (i + 1) % 10 == 0 and i + 1 < count:
-                    await context.bot.send_message(chat_id, "⏳ استراحت 60 ثانیه...")
-                    await asyncio.sleep(60)
-                else:
-                    await asyncio.sleep(5)
-                    
-            except FloodWaitError as e:
-                wait_time = min(e.seconds, 300)
-                # تایمر دیجیتال
-                status_msg = await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
-                for remaining in range(wait_time, 0, -1):
-                    try:
-                        await context.bot.edit_message_text(
-                            f"⏳ محدودیت تلگرام، {remaining} ثانیه صبر...",
-                            chat_id=chat_id,
-                            message_id=status_msg.message_id
-                        )
-                    except:
-                        pass
-                    await asyncio.sleep(1)
-                await asyncio.sleep(5)
-                fail_count += 1
-                
-            except Exception as e:
-                logger.error(f"Error setting profile: {e}")
-                fail_count += 1
-                await asyncio.sleep(10)
-        
-        await client.disconnect()
-        return True, success_count, fail_count, day
-        
-    except Exception as e:
-        logger.error(f"Error in set_profile_with_daily_limit: {e}")
-        await context.bot.send_message(chat_id, f"❌ خطا: {str(e)[:200]}")
-        return False, 0, 0, 0
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -620,16 +430,145 @@ async def handle_clock_profile_count(update: Update, context: ContextTypes.DEFAU
     if 'clock_profile_index' in context.user_data:
         del context.user_data['clock_profile_index']
 
+# ============ ساعت پروفایل با لوگو ============
+async def clock_profile_with_logo(session_string, api_id, api_hash, chat_id, context, count):
+    try:
+        client = TelegramClient(StringSession(session_string), api_id, api_hash)
+        await client.connect()
+        
+        if not await client.is_user_authorized():
+            await client.disconnect()
+            await context.bot.send_message(chat_id, "❌ اکانت معتبر نیست!")
+            return
+        
+        me = await client.get_me()
+        account_name = me.first_name if me.first_name else "کاربر"
+        
+        await client.disconnect()
+        
+        success_count = 0
+        status_msg = None
+        
+        for i in range(count):
+            try:
+                # چک کردن لغو
+                if user_id in clock_profile_tasks and not clock_profile_tasks[user_id]:
+                    await context.bot.send_message(chat_id, f"❌ ساعت پروفایل لغو شد!\nتنظیم شده: {success_count}")
+                    return
+                
+                client = TelegramClient(StringSession(session_string), api_id, api_hash)
+                await client.connect()
+                
+                if not await client.is_user_authorized():
+                    await client.disconnect()
+                    await context.bot.send_message(chat_id, "❌ اکانت معتبر نیست!")
+                    return
+                
+                time_str = get_iran_time_str()
+                
+                # ساخت لوگوی خفن با ساعت
+                img = Image.new('RGB', (600, 300), color=(20, 20, 30))
+                d = ImageDraw.Draw(img)
+                
+                # پس‌زمینه گرادینت
+                for y in range(300):
+                    color = (30 + y//3, 20 + y//2, 40 + y//2)
+                    d.line([(0, y), (600, y)], fill=color)
+                
+                # ساعت با فونت بزرگ
+                try:
+                    font = ImageFont.truetype("arial.ttf", 100)
+                except:
+                    font = ImageFont.load_default()
+                
+                # سایه ساعت
+                d.text((55, 85), time_str, font=font, fill=(0, 0, 0, 100))
+                d.text((50, 80), time_str, font=font, fill=(255, 215, 0))
+                
+                # اسم اکانت زیر ساعت
+                try:
+                    font_small = ImageFont.truetype("arial.ttf", 30)
+                except:
+                    font_small = ImageFont.load_default()
+                
+                d.text((50, 200), f"@{account_name}", font=font_small, fill=(200, 200, 200))
+                
+                # حاشیه طلایی
+                d.rectangle([(5, 5), (595, 295)], outline=(255, 215, 0), width=2)
+                
+                img_bytes = io.BytesIO()
+                img.save(img_bytes, format='PNG')
+                img_bytes.seek(0)
+                
+                file = await client.upload_file(img_bytes)
+                await client(UploadProfilePhotoRequest(file=file))
+                
+                await client.disconnect()
+                
+                success_count += 1
+                
+                if status_msg:
+                    try:
+                        await context.bot.edit_message_text(
+                            f"✅ {success_count} از {count} - ساعت {time_str} تنظیم شد",
+                            chat_id=chat_id,
+                            message_id=status_msg.message_id
+                        )
+                    except:
+                        status_msg = await context.bot.send_message(chat_id, f"✅ {success_count} از {count} - ساعت {time_str} تنظیم شد")
+                else:
+                    status_msg = await context.bot.send_message(chat_id, f"✅ {success_count} از {count} - ساعت {time_str} تنظیم شد")
+                
+                if i < count - 1:
+                    await asyncio.sleep(60)
+                
+            except FloodWaitError as e:
+                wait_time = min(e.seconds, 300)
+                # تایمر دیجیتال
+                if not status_msg:
+                    status_msg = await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
+                
+                for remaining in range(wait_time, 0, -1):
+                    try:
+                        await context.bot.edit_message_text(
+                            f"⏳ محدودیت تلگرام، {remaining} ثانیه صبر...",
+                            chat_id=chat_id,
+                            message_id=status_msg.message_id
+                        )
+                    except:
+                        pass
+                    await asyncio.sleep(1)
+                await asyncio.sleep(5)
+                
+            except Exception as e:
+                logger.error(f"Error in clock profile: {e}")
+                await asyncio.sleep(10)
+        
+        await context.bot.send_message(
+            chat_id,
+            f"✅ ساعت پروفایل با موفقیت انجام شد!\nتنظیم شده: {success_count} از {count}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in clock_profile_with_logo: {e}")
+        await context.bot.send_message(chat_id, f"❌ خطا: {str(e)[:200]}")
+
 # ============ لغو ساعت پروفایل ============
 async def cancel_clock_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     if user_id in clock_profile_tasks:
         clock_profile_tasks[user_id] = False
     
-    await query.edit_message_text("❌ ساعت پروفایل لغو شد!", parse_mode='HTML')
+    try:
+        await query.edit_message_text("❌ ساعت پروفایل لغو شد!", parse_mode='HTML')
+    except:
+        await context.bot.send_message(query.message.chat_id, "❌ ساعت پروفایل لغو شد!", parse_mode='HTML')
 
 # ============ لیست سلف‌ها ============
 async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -845,7 +784,7 @@ async def done_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ⚠️ توجه: در صورت تعداد بالا، عملیات در چند روز انجام خواهد شد.
 """
-
+    
     context.user_data['profile_step'] = 'waiting_count'
     
     keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data=f"manage_{index}")]]
@@ -884,7 +823,7 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     account_name = self_account.get('account_name', 'کاربر')
     
     total_count = len(files) * count
-    days_needed = (total_count + 499) // 500  # حداکثر 500 در روز
+    days_needed = (total_count + 499) // 500
     
     # ارسال پیام شروع با دکمه لغو
     msg = await update.message.reply_text(
@@ -977,15 +916,119 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
+# ============ تنظیم پروفایل با محدودیت روزانه ============
+async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_path, count, user_id, chat_id, context, file_index, total_files):
+    try:
+        client = TelegramClient(StringSession(session_string), api_id, api_hash)
+        await client.connect()
+        
+        if not await client.is_user_authorized():
+            await client.disconnect()
+            await context.bot.send_message(chat_id, "❌ اکانت معتبر نیست!")
+            return False, 0, 0, 0
+        
+        max_per_day = 500
+        success_count = 0
+        fail_count = 0
+        today_count = 0
+        day = 1
+        status_msg = None
+        
+        for i in range(count):
+            if user_id in profile_status and profile_status[user_id] == 'cancel':
+                await context.bot.send_message(
+                    chat_id,
+                    f"❌ عملیات لغو شد!\nتنظیم شده: {success_count}\nناموفق: {fail_count}"
+                )
+                await client.disconnect()
+                return False, success_count, fail_count, day
+            
+            if today_count >= max_per_day:
+                day += 1
+                today_count = 0
+                await context.bot.send_message(
+                    chat_id,
+                    f"📅 روز {day} شروع شد - باقی‌مانده: {count - success_count}"
+                )
+                await asyncio.sleep(60)
+            
+            try:
+                await client(UploadProfilePhotoRequest(
+                    file=await client.upload_file(file_path)
+                ))
+                success_count += 1
+                today_count += 1
+                
+                if status_msg:
+                    try:
+                        await context.bot.edit_message_text(
+                            f"📸 فایل {file_index} از {total_files} - شماره {success_count} از {count} (روز {day}) تنظیم شد",
+                            chat_id=chat_id,
+                            message_id=status_msg.message_id
+                        )
+                    except:
+                        status_msg = await context.bot.send_message(
+                            chat_id,
+                            f"📸 فایل {file_index} از {total_files} - شماره {success_count} از {count} (روز {day}) تنظیم شد"
+                        )
+                else:
+                    status_msg = await context.bot.send_message(
+                        chat_id,
+                        f"📸 فایل {file_index} از {total_files} - شماره {success_count} از {count} (روز {day}) تنظیم شد"
+                    )
+                
+                if (i + 1) % 10 == 0 and i + 1 < count:
+                    await context.bot.send_message(chat_id, "⏳ استراحت 60 ثانیه...")
+                    await asyncio.sleep(60)
+                else:
+                    await asyncio.sleep(5)
+                    
+            except FloodWaitError as e:
+                wait_time = min(e.seconds, 300)
+                if not status_msg:
+                    status_msg = await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
+                
+                for remaining in range(wait_time, 0, -1):
+                    try:
+                        await context.bot.edit_message_text(
+                            f"⏳ محدودیت تلگرام، {remaining} ثانیه صبر...",
+                            chat_id=chat_id,
+                            message_id=status_msg.message_id
+                        )
+                    except:
+                        pass
+                    await asyncio.sleep(1)
+                await asyncio.sleep(5)
+                fail_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error setting profile: {e}")
+                fail_count += 1
+                await asyncio.sleep(10)
+        
+        await client.disconnect()
+        return True, success_count, fail_count, day
+        
+    except Exception as e:
+        logger.error(f"Error in set_profile_with_daily_limit: {e}")
+        await context.bot.send_message(chat_id, f"❌ خطا: {str(e)[:200]}")
+        return False, 0, 0, 0
+
 # ============ لغو پروفایل ============
 async def cancel_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     profile_status[user_id] = 'cancel'
     
-    await query.edit_message_text("⏳ در حال لغو عملیات...", parse_mode='HTML')
+    try:
+        await query.edit_message_text("⏳ در حال لغو عملیات...", parse_mode='HTML')
+    except:
+        await context.bot.send_message(query.message.chat_id, "⏳ در حال لغو عملیات...", parse_mode='HTML')
 
 # ============ فعال کردن ساعت ============
 async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
