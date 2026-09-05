@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 user_sessions = {}
 self_data = {}
+clock_tasks = {}
 
 # ============ فایل ذخیره اطلاعات ============
 DATA_FILE = "selfs.json"
@@ -35,8 +36,11 @@ def load_data():
         self_data = {}
 
 def save_data():
-    with open(DATA_FILE, 'w') as f:
-        json.dump(self_data, f)
+    try:
+        with open(DATA_FILE, 'w') as f:
+            json.dump(self_data, f)
+    except Exception as e:
+        logger.error(f"Error saving data: {e}")
 
 load_data()
 
@@ -97,7 +101,7 @@ async def clear_user_session(user_id):
 async def set_clock_on_profile(session_string, api_id, api_hash):
     """گذاشتن ساعت روی اسم اکانت"""
     try:
-        client = TelegramClient("sessions/temp_clock", api_id, api_hash)
+        client = TelegramClient(StringSession(session_string), api_id, api_hash)
         await client.connect()
         
         if not await client.is_user_authorized():
@@ -121,7 +125,8 @@ async def set_clock_on_profile(session_string, api_id, api_hash):
                 await client(UpdateProfileRequest(first_name=new_name))
                 await client.disconnect()
                 return True
-            except:
+            except Exception as e:
+                logger.error(f"Error updating profile: {e}")
                 await client.disconnect()
                 return False
         
@@ -135,7 +140,7 @@ async def set_clock_on_profile(session_string, api_id, api_hash):
 async def remove_clock_from_profile(session_string, api_id, api_hash):
     """حذف ساعت از روی اسم اکانت"""
     try:
-        client = TelegramClient("sessions/temp_clock", api_id, api_hash)
+        client = TelegramClient(StringSession(session_string), api_id, api_hash)
         await client.connect()
         
         if not await client.is_user_authorized():
@@ -157,7 +162,8 @@ async def remove_clock_from_profile(session_string, api_id, api_hash):
                 await client(UpdateProfileRequest(first_name=clean_name))
                 await client.disconnect()
                 return True
-            except:
+            except Exception as e:
+                logger.error(f"Error removing clock: {e}")
                 await client.disconnect()
                 return False
         
@@ -168,14 +174,16 @@ async def remove_clock_from_profile(session_string, api_id, api_hash):
         logger.error(f"Error in remove_clock_from_profile: {e}")
         return False
 
-async def update_clock_loop(user_id, session_string, api_id, api_hash, stop_event):
+async def clock_loop(user_id, session_string, api_id, api_hash):
     """حلقه برای بروزرسانی ساعت هر دقیقه"""
-    while not stop_event.is_set():
+    while True:
         try:
+            if user_id in clock_tasks and not clock_tasks[user_id]:
+                break
             await set_clock_on_profile(session_string, api_id, api_hash)
             await asyncio.sleep(60)
         except Exception as e:
-            logger.error(f"Error in clock loop for user {user_id}: {e}")
+            logger.error(f"Error in clock loop: {e}")
             await asyncio.sleep(60)
 
 # ============ منوی اصلی ============
@@ -205,12 +213,15 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
     ]
     
     if edit and update.callback_query:
-        await update.callback_query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
-        await update.callback_query.answer()
+        try:
+            await update.callback_query.edit_message_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+            await update.callback_query.answer()
+        except:
+            pass
     else:
         await update.message.reply_text(
             text,
@@ -353,17 +364,11 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 در حال دریافت اطلاعات پروفایل...
 """
     
-    await query.edit_message_text(
-        text,
-        parse_mode='HTML'
-    )
+    await query.edit_message_text(text, parse_mode='HTML')
     
     try:
-        client = TelegramClient(
-            "sessions/temp_profile",
-            self_account.get('api_id'),
-            self_account.get('api_hash')
-        )
+        from telethon.tl.types import StringSession
+        client = TelegramClient(StringSession(self_account.get('session')), self_account.get('api_id'), self_account.get('api_hash'))
         await client.connect()
         
         if await client.is_user_authorized():
@@ -393,18 +398,10 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
             ]
             
-            await query.edit_message_text(
-                profile_text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='HTML'
-            )
+            await query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         else:
             await client.disconnect()
-            text = """
-❌ اکانت معتبر نیست!
-
-لطفاً مجدداً سلف را ایجاد کنید.
-"""
+            text = "❌ اکانت معتبر نیست!\n\nلطفاً مجدداً سلف را ایجاد کنید."
             keyboard = [
                 [InlineKeyboardButton("🔙 بازگشت به مدیریت", callback_data=f"manage_{index}")],
                 [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
@@ -413,11 +410,7 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     except Exception as e:
         logger.error(f"Error getting profile: {e}")
-        text = f"""
-❌ خطا در دریافت پروفایل!
-
-{str(e)[:200]}
-"""
+        text = f"❌ خطا در دریافت پروفایل!\n\n{str(e)[:200]}"
         keyboard = [
             [InlineKeyboardButton("🔙 بازگشت به مدیریت", callback_data=f"manage_{index}")],
             [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
@@ -452,6 +445,11 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         selfs[index]['clock_active'] = True
         save_data()
         
+        # شروع حلقه ساعت
+        if user_id not in clock_tasks or not clock_tasks[user_id]:
+            clock_tasks[user_id] = True
+            asyncio.create_task(clock_loop(user_id, session_string, api_id, api_hash))
+        
         text = f"""
 ✅ ساعت با موفقیت فعال شد!
 
@@ -472,11 +470,7 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
     ]
     
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 # ============ غیرفعال کردن ساعت ============
 async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -504,6 +498,10 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         selfs[index]['clock_active'] = False
         save_data()
         
+        # متوقف کردن حلقه ساعت
+        if user_id in clock_tasks:
+            clock_tasks[user_id] = False
+        
         text = f"""
 ❌ ساعت با موفقیت غیرفعال شد!
 
@@ -523,11 +521,7 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
     ]
     
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 # ============ دکمه ساخت سلف ============
 async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -550,11 +544,7 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
     
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 # ============ دریافت شماره ============
 async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -589,11 +579,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
     
-    await update.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 # ============ دریافت API ID ============
 async def handle_api_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -623,11 +609,7 @@ async def handle_api_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
     
-    await update.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 # ============ دریافت API Hash ============
 async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -648,19 +630,18 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("⏳ در حال ارسال کد تایید...\n\nلطفاً چند لحظه صبر فرمایید.", parse_mode='HTML')
     
     try:
+        from telethon.tl.types import StringSession
         data = user_sessions[user_id]
         phone = data['phone']
         api_id = data['api_id']
         api_hash = data['api_hash']
         
-        session_name = f"temp_{phone}_{api_id}"
-        client = TelegramClient(session_name, api_id, api_hash)
+        client = TelegramClient(StringSession(), api_id, api_hash)
         
         await client.connect()
         await client.send_code_request(phone)
         
         user_sessions[user_id]['client'] = client
-        user_sessions[user_id]['session_name'] = session_name
         user_sessions[user_id]['msg_id'] = msg.message_id
         
         text = f"""
@@ -719,6 +700,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     try:
+        from telethon.tl.types import StringSession
         phone = data['phone']
         api_id = data['api_id']
         api_hash = data['api_hash']
@@ -727,15 +709,10 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_string = client.session.save()
         await client.disconnect()
         
-        try:
-            os.remove(f"{data.get('session_name', 'temp')}.session")
-        except:
-            pass
-        
         # دریافت اطلاعات اکانت
         account_name = "بدون نام"
         try:
-            client2 = TelegramClient("sessions/temp_name", api_id, api_hash)
+            client2 = TelegramClient(StringSession(session_string), api_id, api_hash)
             await client2.connect()
             if await client2.is_user_authorized():
                 me = await client2.get_me()
@@ -786,11 +763,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🏠 بازگشت به صفحه اصلی", callback_data="back")]
         ]
         
-        await update.message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         
     except SessionPasswordNeededError:
         user_sessions[user_id]['step'] = "password"
@@ -803,11 +776,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
         keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
         
-        await update.message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         
     except PhoneCodeExpiredError:
         await client.send_code_request(phone)
@@ -841,19 +810,15 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     try:
+        from telethon.tl.types import StringSession
         await client.sign_in(password=password)
         session_string = client.session.save()
         await client.disconnect()
         
-        try:
-            os.remove(f"{data.get('session_name', 'temp')}.session")
-        except:
-            pass
-        
         # دریافت اطلاعات اکانت
         account_name = "بدون نام"
         try:
-            client2 = TelegramClient("sessions/temp_name", data['api_id'], data['api_hash'])
+            client2 = TelegramClient(StringSession(session_string), data['api_id'], data['api_hash'])
             await client2.connect()
             if await client2.is_user_authorized():
                 me = await client2.get_me()
@@ -904,11 +869,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🏠 بازگشت به صفحه اصلی", callback_data="back")]
         ]
         
-        await update.message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='HTML'
-        )
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         
     except Exception as e:
         await update.message.reply_text(
