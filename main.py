@@ -13,8 +13,6 @@ from telethon.tl.functions.account import UpdateProfileRequest, UpdateUsernameRe
 from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
 from telethon.tl.types import InputPhoto, MessageMediaPhoto, MessageMediaDocument
 import urllib.request
-from PIL import Image, ImageDraw, ImageFont
-import io
 
 # ============ تنظیمات ============
 TOKEN = "8810050319:AAH5T1qehg7U-oplDB_yp4JVGZl6W866BzY"
@@ -244,7 +242,10 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
 # ============ تنظیمات ============
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     text = """
 ⚙️ <b>تنظیمات</b>
@@ -257,12 +258,18 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
     ]
     
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ تنظیمات پروفایل ============
 async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     selfs = self_data.get(user_id, [])
@@ -279,7 +286,10 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔷 ایجاد سلف جدید", callback_data="new_session")],
             [InlineKeyboardButton("🔙 بازگشت", callback_data="settings")]
         ]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        except:
+            pass
         return
     
     text = f"""
@@ -296,12 +306,18 @@ async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="settings")])
     
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ ساعت پروفایل ============
 async def clock_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     selfs = self_data.get(user_id, [])
@@ -318,7 +334,10 @@ async def clock_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔷 ایجاد سلف جدید", callback_data="new_session")],
             [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
         ]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        except:
+            pass
         return
     
     text = f"""
@@ -335,19 +354,28 @@ async def clock_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="back")])
     
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ انتخاب سلف برای ساعت پروفایل ============
 async def clock_profile_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[3])
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        try:
+            await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        except:
+            pass
         return
     
     context.user_data['clock_profile_index'] = index
@@ -366,7 +394,10 @@ async def clock_profile_select(update: Update, context: ContextTypes.DEFAULT_TYP
     
     keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
     
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ دریافت تعداد برای ساعت پروفایل ============
 async def handle_clock_profile_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -399,7 +430,7 @@ async def handle_clock_profile_count(update: Update, context: ContextTypes.DEFAU
     account_name = self_account.get('account_name', 'کاربر')
     
     # ارسال پیام شروع
-    msg = await update.message.reply_text(
+    await update.message.reply_text(
         f"""
 🚀 <b>شروع ساعت پروفایل</b>
 
@@ -421,7 +452,7 @@ async def handle_clock_profile_count(update: Update, context: ContextTypes.DEFAU
         clock_profile_tasks[user_id] = True
     
     asyncio.create_task(clock_profile_with_logo(
-        session_string, api_id, api_hash,
+        user_id, session_string, api_id, api_hash,
         update.effective_chat.id, context, count
     ))
     
@@ -431,8 +462,16 @@ async def handle_clock_profile_count(update: Update, context: ContextTypes.DEFAU
         del context.user_data['clock_profile_index']
 
 # ============ ساعت پروفایل با لوگو ============
-async def clock_profile_with_logo(session_string, api_id, api_hash, chat_id, context, count):
+async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, chat_id, context, count):
     try:
+        # بررسی وجود Pillow
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            import io
+        except ImportError:
+            await context.bot.send_message(chat_id, "❌ کتابخانه Pillow نصب نیست!")
+            return
+        
         client = TelegramClient(StringSession(session_string), api_id, api_hash)
         await client.connect()
         
@@ -451,7 +490,6 @@ async def clock_profile_with_logo(session_string, api_id, api_hash, chat_id, con
         
         for i in range(count):
             try:
-                # چک کردن لغو
                 if user_id in clock_profile_tasks and not clock_profile_tasks[user_id]:
                     await context.bot.send_message(chat_id, f"❌ ساعت پروفایل لغو شد!\nتنظیم شده: {success_count}")
                     return
@@ -481,8 +519,6 @@ async def clock_profile_with_logo(session_string, api_id, api_hash, chat_id, con
                 except:
                     font = ImageFont.load_default()
                 
-                # سایه ساعت
-                d.text((55, 85), time_str, font=font, fill=(0, 0, 0, 100))
                 d.text((50, 80), time_str, font=font, fill=(255, 215, 0))
                 
                 # اسم اکانت زیر ساعت
@@ -524,7 +560,6 @@ async def clock_profile_with_logo(session_string, api_id, api_hash, chat_id, con
                 
             except FloodWaitError as e:
                 wait_time = min(e.seconds, 300)
-                # تایمر دیجیتال
                 if not status_msg:
                     status_msg = await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
                 
@@ -573,7 +608,10 @@ async def cancel_clock_profile(update: Update, context: ContextTypes.DEFAULT_TYP
 # ============ لیست سلف‌ها ============
 async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     selfs = self_data.get(user_id, [])
@@ -590,7 +628,10 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔷 ایجاد سلف جدید", callback_data="new_session")],
             [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
         ]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        except:
+            pass
         return
     
     text = f"""
@@ -621,23 +662,28 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("🔷 ایجاد سلف جدید", callback_data="new_session")])
     keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="back")])
     
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ مدیریت سلف ============
 async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[1])
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        try:
+            await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        except:
+            pass
         return
     
     self_account = selfs[index]
@@ -671,23 +717,28 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard.append([InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_selfs")])
     
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ تنظیم پروفایل جدید ============
 async def new_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[2])
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        try:
+            await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        except:
+            pass
         return
     
     context.user_data['profile_index'] = index
@@ -710,7 +761,10 @@ async def new_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 لغو و بازگشت", callback_data=f"manage_{index}")]
     ]
     
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ دریافت مدیا برای پروفایل ============
 async def handle_profile_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -758,20 +812,29 @@ async def handle_profile_media(update: Update, context: ContextTypes.DEFAULT_TYP
 # ============ اتمام ارسال پروفایل ============
 async def done_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[2])
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        try:
+            await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        except:
+            pass
         return
     
     files = context.user_data.get('profile_files', [])
     
     if not files:
-        await query.edit_message_text("❌ <b>هیچ فایلی ارسال نشده است!</b>\n\nلطفاً حداقل یک عکس یا فیلم ارسال کنید.", parse_mode='HTML')
+        try:
+            await query.edit_message_text("❌ <b>هیچ فایلی ارسال نشده است!</b>\n\nلطفاً حداقل یک عکس یا فیلم ارسال کنید.", parse_mode='HTML')
+        except:
+            pass
         return
     
     text = f"""
@@ -789,7 +852,10 @@ async def done_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data=f"manage_{index}")]]
     
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ دریافت تعداد دفعات ============
 async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -826,7 +892,7 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     days_needed = (total_count + 499) // 500
     
     # ارسال پیام شروع با دکمه لغو
-    msg = await update.message.reply_text(
+    await update.message.reply_text(
         f"""
 🚀 <b>شروع تنظیم پروفایل</b>
 
@@ -1033,14 +1099,20 @@ async def cancel_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ فعال کردن ساعت ============
 async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[2])
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        try:
+            await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        except:
+            pass
         return
     
     self_account = selfs[index]
@@ -1081,19 +1153,28 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
     ]
     
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ غیرفعال کردن ساعت ============
 async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[2])
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        try:
+            await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        except:
+            pass
         return
     
     self_account = selfs[index]
@@ -1130,12 +1211,18 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
     ]
     
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ دکمه ساخت سلف ============
 async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = query.from_user.id
     await clear_user_session(user_id)
@@ -1153,7 +1240,10 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
     
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ دریافت شماره ============
 async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1484,7 +1574,10 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ بازگشت ============
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except:
+        pass
     
     user_id = query.from_user.id
     await clear_user_session(user_id)
