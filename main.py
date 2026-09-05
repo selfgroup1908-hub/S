@@ -28,6 +28,7 @@ self_data = {}
 clock_tasks = {}
 profile_tasks = {}
 profile_status = {}
+clock_profile_tasks = {}
 
 # ============ فایل ذخیره اطلاعات ============
 DATA_FILE = "selfs.json"
@@ -194,79 +195,104 @@ async def clock_loop(user_id, session_string, api_id, api_hash):
             logger.error(f"Error in clock loop: {e}")
             await asyncio.sleep(1)
 
-# ============ توابع تنظیم پروفایل ============
-async def set_profile_picture_with_progress(session_string, api_id, api_hash, file_path, count, user_id, chat_id, context):
-    """تنظیم پروفایل با گزارش پیشرفت"""
+# ============ ساعت پروفایل ============
+async def clock_profile_loop(user_id, session_string, api_id, api_hash, chat_id, context, count):
+    """حلقه ساعت پروفایل - هر دقیقه عکس میگیره و میزاره"""
     try:
         client = TelegramClient(StringSession(session_string), api_id, api_hash)
         await client.connect()
         
         if not await client.is_user_authorized():
             await client.disconnect()
-            return False, "اکانت معتبر نیست!"
+            await context.bot.send_message(chat_id, "❌ اکانت معتبر نیست!")
+            return
         
-        success_count = 0
-        fail_count = 0
-        
-        # ارسال پیام شروع
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="⏳ شروع تنظیم پروفایل‌ها..."
-        )
-        
-        for i in range(count):
-            # چک کردن وضعیت لغو
-            if user_id in profile_status and profile_status[user_id] == 'cancel':
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"❌ عملیات لغو شد!\n\nتنظیم شده: {success_count}\nناموفق: {fail_count}"
-                )
-                await client.disconnect()
-                return False, "لغو شد"
-            
-            try:
-                await client(UploadProfilePhotoRequest(
-                    file=await client.upload_file(file_path)
-                ))
-                success_count += 1
-                
-                # گزارش هر 10 بار
-                if success_count % 10 == 0:
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"📊 پیشرفت: {success_count} از {count} تنظیم شد"
-                    )
-                
-                # محدودیت زمانی
-                if (i + 1) % 10 == 0 and i + 1 < count:
-                    await asyncio.sleep(60)
-                else:
-                    await asyncio.sleep(5)
-                    
-            except FloodWaitError as e:
-                wait_time = min(e.seconds, 300)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر کنید..."
-                )
-                await asyncio.sleep(wait_time + 5)
-                fail_count += 1
-                
-            except Exception as e:
-                logger.error(f"Error setting profile: {e}")
-                fail_count += 1
-                await asyncio.sleep(10)
+        me = await client.get_me()
+        account_name = me.first_name if me.first_name else "کاربر"
         
         await client.disconnect()
         
-        if success_count > 0:
-            return True, f"✅ {success_count} بار با موفقیت تنظیم شد.\n❌ {fail_count} بار ناموفق."
-        else:
-            return False, "❌ هیچکدام تنظیم نشد!"
+        await context.bot.send_message(
+            chat_id,
+            f"🕐 شروع ساعت پروفایل برای {account_name}\nتعداد دفعات: {count}"
+        )
         
+        success_count = 0
+        
+        for i in range(count):
+            # چک کردن لغو
+            if user_id in clock_profile_tasks and not clock_profile_tasks[user_id]:
+                await context.bot.send_message(chat_id, f"❌ ساعت پروفایل لغو شد!\nتنظیم شده: {success_count}")
+                return
+            
+            time_str = get_iran_time_str()
+            time_full = get_iran_full_time()
+            
+            try:
+                client = TelegramClient(StringSession(session_string), api_id, api_hash)
+                await client.connect()
+                
+                if not await client.is_user_authorized():
+                    await client.disconnect()
+                    await context.bot.send_message(chat_id, "❌ اکانت معتبر نیست!")
+                    return
+                
+                # آپلود عکس با زمان
+                import io
+                from PIL import Image, ImageDraw, ImageFont
+                
+                # ساخت عکس با ساعت
+                img = Image.new('RGB', (500, 200), color=(0, 0, 0))
+                d = ImageDraw.Draw(img)
+                
+                try:
+                    font = ImageFont.truetype("arial.ttf", 80)
+                except:
+                    font = ImageFont.load_default()
+                
+                d.text((50, 40), time_str, font=font, fill=(255, 255, 255))
+                
+                # ذخیره عکس
+                img_bytes = io.BytesIO()
+                img.save(img_bytes, format='PNG')
+                img_bytes.seek(0)
+                
+                # آپلود به تلگرام
+                file = await client.upload_file(img_bytes)
+                await client(UploadProfilePhotoRequest(file=file))
+                
+                await client.disconnect()
+                
+                success_count += 1
+                
+                if success_count % 5 == 0:
+                    await context.bot.send_message(chat_id, f"📊 {success_count} از {count} تنظیم شد")
+                
+                # محدودیت زمانی
+                if i < count - 1:
+                    # 1 دقیقه صبر کن
+                    await asyncio.sleep(60)
+                
+            except FloodWaitError as e:
+                wait_time = min(e.seconds, 300)
+                await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
+                await asyncio.sleep(wait_time + 5)
+                
+            except Exception as e:
+                logger.error(f"Error in clock profile: {e}")
+                await asyncio.sleep(10)
+        
+        await context.bot.send_message(
+            chat_id,
+            f"✅ ساعت پروفایل با موفقیت انجام شد!\nتنظیم شده: {success_count} از {count}"
+        )
+        
+        if user_id in clock_profile_tasks:
+            del clock_profile_tasks[user_id]
+            
     except Exception as e:
-        logger.error(f"Error in set_profile_picture: {e}")
-        return False, f"❌ خطا: {str(e)[:200]}"
+        logger.error(f"Error in clock_profile_loop: {e}")
+        await context.bot.send_message(chat_id, f"❌ خطا: {str(e)[:200]}")
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -291,9 +317,8 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
     
     keyboard = [
         [InlineKeyboardButton("🔷 ایجاد سلف جدید", callback_data="new_session")],
-        [InlineKeyboardButton("📋 لیست سلف‌ها", callback_data="list_selfs")],
-        [InlineKeyboardButton("🔄 بروزرسانی ساعت", callback_data="refresh_clock")],
-        [InlineKeyboardButton("⏰ مدیریت ساعت", callback_data="manage_clock")]
+        [InlineKeyboardButton("📋 لیست سلف‌ها", callback_data="list_selfs"), InlineKeyboardButton("🕐 ساعت پروفایل", callback_data="clock_profile")],
+        [InlineKeyboardButton("🏠 تنظیمات", callback_data="settings")]
     ]
     
     if edit and update.callback_query:
@@ -313,8 +338,29 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
             parse_mode='HTML'
         )
 
-# ============ مدیریت ساعت ============
-async def manage_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ============ تنظیمات ============
+async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = str(query.from_user.id)
+    selfs = self_data.get(user_id, [])
+    
+    text = """
+⚙️ <b>تنظیمات</b>
+
+لطفاً یکی از گزینه‌های زیر را انتخاب کنید:
+"""
+    
+    keyboard = [
+        [InlineKeyboardButton("📸 تنظیم پروفایل", callback_data="profile_settings")],
+        [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
+    ]
+    
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+# ============ تنظیمات پروفایل ============
+async def profile_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
@@ -323,7 +369,46 @@ async def manage_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not selfs:
         text = """
-⏰ <b>مدیریت ساعت</b>
+📸 <b>تنظیم پروفایل</b>
+
+❌ <b>هیچ سلفی ثبت نشده است.</b>
+
+لطفاً ابتدا یک سلف ایجاد کنید.
+"""
+        keyboard = [
+            [InlineKeyboardButton("🔷 ایجاد سلف جدید", callback_data="new_session")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="settings")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        return
+    
+    text = f"""
+📸 <b>تنظیم پروفایل</b>
+
+لطفاً سلف مورد نظر را انتخاب کنید:
+"""
+    
+    keyboard = []
+    for i, self_account in enumerate(selfs):
+        phone = self_account.get('phone', 'نامشخص')
+        account_name = self_account.get('account_name', 'بدون نام')
+        keyboard.append([InlineKeyboardButton(f"{i+1}. {account_name}", callback_data=f"new_profile_{i}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="settings")])
+    
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+# ============ ساعت پروفایل ============
+async def clock_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = str(query.from_user.id)
+    selfs = self_data.get(user_id, [])
+    
+    if not selfs:
+        text = """
+🕐 <b>ساعت پروفایل</b>
 
 ❌ <b>هیچ سلفی ثبت نشده است.</b>
 
@@ -337,129 +422,111 @@ async def manage_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     text = f"""
-⏰ <b>مدیریت ساعت</b>
+🕐 <b>ساعت پروفایل</b>
 
-لطفاً سلف مورد نظر برای مدیریت ساعت را انتخاب کنید:
+لطفاً سلف مورد نظر را انتخاب کنید:
 """
     
     keyboard = []
     for i, self_account in enumerate(selfs):
         phone = self_account.get('phone', 'نامشخص')
         account_name = self_account.get('account_name', 'بدون نام')
-        clock_active = self_account.get('clock_active', False)
-        status = "🟢 فعال" if clock_active else "🔴 غیرفعال"
-        
-        keyboard.append([InlineKeyboardButton(f"{i+1}. {account_name} - {status}", callback_data=f"clock_manage_{i}")])
+        keyboard.append([InlineKeyboardButton(f"{i+1}. {account_name}", callback_data=f"clock_profile_select_{i}")])
     
     keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="back")])
     
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
-# ============ مدیریت ساعت یک سلف ============
-async def clock_manage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ============ انتخاب سلف برای ساعت پروفایل ============
+async def clock_profile_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     user_id = str(query.from_user.id)
-    index = int(query.data.split('_')[2])
+    index = int(query.data.split('_')[3])
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
         await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
         return
     
-    self_account = selfs[index]
-    phone = self_account.get('phone', 'نامشخص')
-    account_name = self_account.get('account_name', 'بدون نام')
-    clock_active = self_account.get('clock_active', False)
-    active_time = self_account.get('active_time', 'تنظیم نشده')
+    context.user_data['clock_profile_index'] = index
+    context.user_data['clock_profile_step'] = 'waiting_count'
     
-    status = "🟢 <b>فعال</b>" if clock_active else "🔴 <b>غیرفعال</b>"
-    
-    text = f"""
-⏰ <b>مدیریت ساعت - {account_name}</b>
+    text = """
+🕐 <b>ساعت پروفایل</b>
 
-📱 شماره: <code>{phone}</code>
-👤 نام: <b>{account_name}</b>
-🕐 ساعت فعلی: <code>{active_time}</code>
-📊 وضعیت: {status}
+لطفاً تعداد دفعاتی که می‌خواهید ساعت پروفایل تنظیم شود را وارد کنید.
 
-لطفاً یکی از گزینه‌های زیر را انتخاب کنید:
+<b>حداکثر: 100 بار</b>
+<b>حداقل: 1 بار</b>
+
+⚠️ توجه: هر بار 1 دقیقه صبر می‌کند تا محدودیت تلگرام رعایت شود.
 """
     
-    keyboard = []
-    if clock_active:
-        keyboard.append([InlineKeyboardButton("❌ غیرفعال کردن ساعت", callback_data=f"deactivate_clock_{index}")])
-    else:
-        keyboard.append([InlineKeyboardButton("✅ فعال کردن ساعت", callback_data=f"activate_clock_{index}")])
-    
-    keyboard.append([InlineKeyboardButton("🔄 بروزرسانی ساعت", callback_data=f"refresh_clock_{index}")])
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="manage_clock")])
+    keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data="back")]]
     
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
-# ============ بروزرسانی ساعت ============
-async def refresh_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+# ============ دریافت تعداد برای ساعت پروفایل ============
+async def handle_clock_profile_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
     
-    user_id = str(query.from_user.id)
-    
-    if query.data.startswith("refresh_clock_"):
-        index = int(query.data.split('_')[2])
-        selfs = self_data.get(user_id, [])
-        if index >= len(selfs):
-            await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
-            return
-        
-        self_account = selfs[index]
-        session_string = self_account.get('session')
-        api_id = self_account.get('api_id')
-        api_hash = self_account.get('api_hash')
-        
-        result = await set_clock_on_profile(session_string, api_id, api_hash)
-        
-        if result:
-            time_str = get_iran_time_str()
-            selfs[index]['active_time'] = time_str
-            save_data()
-            text = f"✅ <b>ساعت با موفقیت بروزرسانی شد!</b>\n🕐 زمان: <code>{time_str}</code>"
-        else:
-            text = "❌ <b>خطا در بروزرسانی ساعت!</b>"
-        
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data=f"clock_manage_{index}")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    if 'clock_profile_step' not in context.user_data or context.user_data['clock_profile_step'] != 'waiting_count':
+        await update.message.reply_text("❌ <b>لطفاً از دکمه ساعت پروفایل استفاده کنید.</b>", parse_mode='HTML')
         return
+    
+    try:
+        count = int(update.message.text.strip())
+        if count < 1 or count > 100:
+            await update.message.reply_text("❌ <b>تعداد باید بین 1 تا 100 باشد!</b>\n\nلطفاً مجدداً وارد کنید:", parse_mode='HTML')
+            return
+    except:
+        await update.message.reply_text("❌ <b>لطفاً یک عدد معتبر وارد کنید!</b>", parse_mode='HTML')
+        return
+    
+    index = context.user_data['clock_profile_index']
     
     selfs = self_data.get(user_id, [])
-    if not selfs:
-        await query.edit_message_text("❌ <b>هیچ سلفی ثبت نشده است.</b>", parse_mode='HTML')
+    if index >= len(selfs):
+        await update.message.reply_text("❌ <b>سلف مورد نظر یافت نشد!</b>", parse_mode='HTML')
         return
     
-    await query.edit_message_text("⏳ <b>در حال بروزرسانی ساعت همه سلف‌ها...</b>", parse_mode='HTML')
+    self_account = selfs[index]
+    session_string = self_account.get('session')
+    api_id = self_account.get('api_id')
+    api_hash = self_account.get('api_hash')
+    account_name = self_account.get('account_name', 'کاربر')
     
-    success_count = 0
-    for self_account in selfs:
-        try:
-            result = await set_clock_on_profile(
-                self_account.get('session'),
-                self_account.get('api_id'),
-                self_account.get('api_hash')
-            )
-            if result:
-                success_count += 1
-        except:
-            pass
-    
-    text = f"""
-✅ <b>بروزرسانی ساعت انجام شد!</b>
+    await update.message.reply_text(
+        f"""
+🚀 <b>شروع ساعت پروفایل</b>
 
-تعداد سلف‌های بروزرسانی شده: <b>{success_count}</b>
-تعداد کل سلف‌ها: <b>{len(selfs)}</b>
-"""
+👤 نام اکانت: <b>{account_name}</b>
+🔢 تعداد دفعات: <b>{count}</b>
+
+⏳ هر دقیقه یکبار عکس ساعت گرفته می‌شود...
+<b>⚠️ این عملیات ممکن است چند دقیقه طول بکشد.</b>
+""",
+        parse_mode='HTML'
+    )
     
-    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    # شروع حلقه ساعت پروفایل
+    if user_id in clock_profile_tasks:
+        clock_profile_tasks[user_id] = True
+    else:
+        clock_profile_tasks[user_id] = True
+    
+    asyncio.create_task(clock_profile_loop(
+        user_id, session_string, api_id, api_hash,
+        update.effective_chat.id, context, count
+    ))
+    
+    # پاک کردن داده‌های موقت
+    if 'clock_profile_step' in context.user_data:
+        del context.user_data['clock_profile_step']
+    if 'clock_profile_index' in context.user_data:
+        del context.user_data['clock_profile_index']
 
 # ============ لیست سلف‌ها ============
 async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -552,7 +619,7 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     
     keyboard = [
-        [InlineKeyboardButton("📸 تنظیم پروفایل جدید", callback_data=f"new_profile_{index}")]
+        [InlineKeyboardButton("📸 تنظیم پروفایل", callback_data=f"new_profile_{index}")]
     ]
     
     if clock_active:
@@ -584,7 +651,6 @@ async def new_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['profile_index'] = index
     context.user_data['profile_step'] = 'waiting_media'
     context.user_data['profile_files'] = []
-    context.user_data['profile_msg_id'] = query.message.message_id
     
     text = """
 📸 <b>تنظیم پروفایل جدید</b>
@@ -716,7 +782,7 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     
     total_count = len(files) * count
     
-    msg = await update.message.reply_text(
+    await update.message.reply_text(
         f"""
 🚀 <b>شروع تنظیم پروفایل</b>
 
@@ -728,62 +794,29 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
 ⏳ لطفاً صبر کنید...
 <b>⚠️ این عملیات ممکن است چند دقیقه طول بکشد.</b>
 """,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("❌ لغو عملیات", callback_data=f"cancel_profile_{index}")],
-            [InlineKeyboardButton("▶️ ادامه", callback_data=f"continue_profile_{index}")]
-        ]),
         parse_mode='HTML'
     )
     
-    # ذخیره برای مدیریت لغو
-    profile_status[user_id] = 'running'
-    
     total_success = 0
     total_fail = 0
-    file_index = 0
     
     for file_path in files:
-        file_index += 1
-        
-        # چک کردن وضعیت لغو
-        if user_id in profile_status and profile_status[user_id] == 'cancel':
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"❌ عملیات لغو شد!\n\nتنظیم شده: {total_success}\nناموفق: {total_fail}"
-            )
-            break
-        
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"📸 در حال تنظیم فایل {file_index} از {len(files)}..."
-        )
-        
-        success, message = await set_profile_picture_with_progress(
-            session_string, api_id, api_hash, file_path, count,
-            user_id, update.effective_chat.id, context
-        )
-        
+        success, message = await set_profile_picture_with_limit(session_string, api_id, api_hash, file_path, count, update.effective_chat.id, context)
         if success:
             total_success += count
         else:
             total_fail += count
-        
-        # حذف فایل موقت
         try:
             os.remove(file_path)
         except:
             pass
     
-    # پاک کردن داده‌های موقت
     if 'profile_files' in context.user_data:
         del context.user_data['profile_files']
     if 'profile_step' in context.user_data:
         del context.user_data['profile_step']
     if 'profile_index' in context.user_data:
         del context.user_data['profile_index']
-    
-    if user_id in profile_status:
-        del profile_status[user_id]
     
     if total_success > 0:
         text = f"""
@@ -814,22 +847,51 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
-# ============ لغو پروفایل ============
-async def cancel_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = str(query.from_user.id)
-    profile_status[user_id] = 'cancel'
-    
-    await query.edit_message_text("⏳ در حال لغو عملیات...", parse_mode='HTML')
-
-# ============ ادامه پروفایل ============
-async def continue_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    await query.edit_message_text("▶️ عملیات ادامه یافت.", parse_mode='HTML')
+# ============ تنظیم پروفایل با محدودیت ============
+async def set_profile_picture_with_limit(session_string, api_id, api_hash, file_path, count, chat_id, context):
+    try:
+        client = TelegramClient(StringSession(session_string), api_id, api_hash)
+        await client.connect()
+        
+        if not await client.is_user_authorized():
+            await client.disconnect()
+            return False, "اکانت معتبر نیست!"
+        
+        success_count = 0
+        fail_count = 0
+        
+        for i in range(count):
+            try:
+                await client(UploadProfilePhotoRequest(
+                    file=await client.upload_file(file_path)
+                ))
+                success_count += 1
+                
+                if (i + 1) % 10 == 0 and i + 1 < count:
+                    await asyncio.sleep(60)
+                else:
+                    await asyncio.sleep(5)
+                    
+            except FloodWaitError as e:
+                wait_time = min(e.seconds, 300)
+                await asyncio.sleep(wait_time + 5)
+                fail_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error setting profile: {e}")
+                fail_count += 1
+                await asyncio.sleep(10)
+        
+        await client.disconnect()
+        
+        if success_count > 0:
+            return True, f"✅ {success_count} بار با موفقیت تنظیم شد.\n❌ {fail_count} بار ناموفق."
+        else:
+            return False, "❌ هیچکدام تنظیم نشد!"
+        
+    except Exception as e:
+        logger.error(f"Error in set_profile_picture: {e}")
+        return False, f"❌ خطا: {str(e)[:200]}"
 
 # ============ فعال کردن ساعت ============
 async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1301,6 +1363,10 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del context.user_data['profile_step']
     if 'profile_index' in context.user_data:
         del context.user_data['profile_index']
+    if 'clock_profile_step' in context.user_data:
+        del context.user_data['clock_profile_step']
+    if 'clock_profile_index' in context.user_data:
+        del context.user_data['clock_profile_index']
     
     await main_menu(update, context, edit=True)
 
@@ -1319,6 +1385,12 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         elif step == 'waiting_count':
             await handle_profile_count(update, context)
+            return
+    
+    if 'clock_profile_step' in context.user_data:
+        step = context.user_data['clock_profile_step']
+        if step == 'waiting_count':
+            await handle_clock_profile_count(update, context)
             return
     
     if user_id in user_sessions:
@@ -1353,13 +1425,12 @@ def main():
         application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
         application.add_handler(CallbackQueryHandler(list_selfs, pattern="^list_selfs$"))
         application.add_handler(CallbackQueryHandler(manage_self, pattern="^manage_"))
-        application.add_handler(CallbackQueryHandler(manage_clock, pattern="^manage_clock$"))
-        application.add_handler(CallbackQueryHandler(clock_manage, pattern="^clock_manage_"))
-        application.add_handler(CallbackQueryHandler(refresh_clock, pattern="^refresh_clock"))
+        application.add_handler(CallbackQueryHandler(settings, pattern="^settings$"))
+        application.add_handler(CallbackQueryHandler(profile_settings, pattern="^profile_settings$"))
+        application.add_handler(CallbackQueryHandler(clock_profile, pattern="^clock_profile$"))
+        application.add_handler(CallbackQueryHandler(clock_profile_select, pattern="^clock_profile_select_"))
         application.add_handler(CallbackQueryHandler(new_profile, pattern="^new_profile_"))
         application.add_handler(CallbackQueryHandler(done_profile, pattern="^done_profile_"))
-        application.add_handler(CallbackQueryHandler(cancel_profile, pattern="^cancel_profile_"))
-        application.add_handler(CallbackQueryHandler(continue_profile, pattern="^continue_profile_"))
         application.add_handler(CallbackQueryHandler(activate_clock, pattern="^activate_clock_"))
         application.add_handler(CallbackQueryHandler(deactivate_clock, pattern="^deactivate_clock_"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
