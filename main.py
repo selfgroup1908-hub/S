@@ -4,6 +4,7 @@ import asyncio
 import os
 import json
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
@@ -13,11 +14,11 @@ from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, P
 from telethon.tl.functions.account import UpdateProfileRequest, UpdateUsernameRequest
 from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
 from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
-from telethon.tl.types import InputPhoto, MessageMediaPhoto, MessageMediaDocument
+from telethon.tl.types import InputPhoto, MessageMediaPhoto, MessageMediaDocument, User
 import urllib.request
 
 # ============ تنظیمات ============
-TOKEN = "8810050319:AAH5T1qehg7U-oplDB_yp4JVGZl6W866BzY"
+TOKEN = os.getenv("BOT_TOKEN", "8810050319:AAH5T1qehg7U-oplDB_yp4JVGZl6W866BzY")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -28,24 +29,23 @@ logger = logging.getLogger(__name__)
 user_sessions = {}
 self_data = {}
 clock_tasks = {}
-profile_tasks = {}
 profile_status = {}
-salf_clients = {}
-salf_tasks = {}
+self_clients = {}
+self_tasks = {}
 
-# ============ فونت‌های ساعت ============
+# ============ فونت‌های ساعت با نمایش ============
 FONTS = {
-    '1': '𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗',
-    '2': '𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵',
-    '3': '⓿⓵⓶⓷⓸⓹⓺⓻⓼⓽',
-    '4': '⓪①②③④⑤⑥⑦⑧⑨',
-    '5': '₀₁₂₃₄₅₆₇₈₉',
-    '6': '𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿',
-    '7': '⁰¹²³⁴⁵⁶⁷⁸⁹',
-    '8': '⊘①②③④⑤⑥⑦⑧⑨',
-    '9': '𝟶𝟷ӠӠ4ƼϬ7𝟾९',
-    '10': '𝟷ϩӠ4ƼϬ7𝟾₉₀',
-    '11': '¹²³⁴⁵₆₇₈₉₀'
+    '1': {'name': 'فونت 1', 'display': '𝟎𝟎:𝟎𝟎', 'map': '𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗'},
+    '2': {'name': 'فونت 2', 'display': '𝟬𝟬:𝟬𝟬', 'map': '𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵'},
+    '3': {'name': 'فونت 3', 'display': '⓿⓿:⓿⓿', 'map': '⓿⓵⓶⓷⓸⓹⓺⓻⓼⓽'},
+    '4': {'name': 'فونت 4', 'display': '⓪⓪:⓪⓪', 'map': '⓪①②③④⑤⑥⑦⑧⑨'},
+    '5': {'name': 'فونت 5', 'display': '₀₀:₀₀', 'map': '₀₁₂₃₄₅₆₇₈₉'},
+    '6': {'name': 'فونت 6', 'display': '𝟶𝟶:𝟶𝟶', 'map': '𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿'},
+    '7': {'name': 'فونت 7', 'display': '⁰⁰:⁰⁰', 'map': '⁰¹²³⁴⁵⁶⁷⁸⁹'},
+    '8': {'name': 'فونت 8', 'display': '⊘⊘:⊘⊘', 'map': '⊘①②③④⑤⑥⑦⑧⑨'},
+    '9': {'name': 'فونت 9', 'display': '𝟶𝟷:ӠӠ', 'map': '𝟶𝟷ӠӠ4ƼϬ7𝟾९'},
+    '10': {'name': 'فونت 10', 'display': '𝟷ϩ:Ӡ4', 'map': '𝟷ϩӠ4ƼϬ7𝟾₉₀'},
+    '11': {'name': 'فونت 11', 'display': '¹²:³⁴', 'map': '¹²³⁴⁵₆₇₈₉₀'}
 }
 
 FONT_NAMES = {
@@ -64,6 +64,7 @@ FONT_NAMES = {
 
 # ============ فایل ذخیره اطلاعات ============
 DATA_FILE = "selfs.json"
+DATA_LOCK = asyncio.Lock()
 
 def load_data():
     global self_data
@@ -73,12 +74,13 @@ def load_data():
     except:
         self_data = {}
 
-def save_data():
-    try:
-        with open(DATA_FILE, 'w') as f:
-            json.dump(self_data, f)
-    except Exception as e:
-        logger.error(f"Error saving data: {e}")
+async def save_data():
+    async with DATA_LOCK:
+        try:
+            with open(DATA_FILE, 'w') as f:
+                json.dump(self_data, f)
+        except Exception as e:
+            logger.exception(f"Error saving data: {e}")
 
 load_data()
 
@@ -104,30 +106,17 @@ def is_valid_api_hash(text):
 def clean_code(text):
     return re.sub(r'[.\s\-]', '', text).strip()
 
-def mask_string(s, show=5):
-    if not s:
-        return "***"
-    if len(s) <= show:
-        return s
-    return s[:show] + "..." + s[-3:]
-
 def get_iran_time():
-    now = datetime.now(timezone.utc)
-    iran_time = now + timedelta(hours=3, minutes=30)
-    return iran_time
+    return datetime.now(ZoneInfo("Asia/Tehran"))
 
 def get_iran_time_str():
     return get_iran_time().strftime("%H:%M")
-
-def get_iran_full_time():
-    return get_iran_time().strftime("%H:%M:%S")
 
 def get_iran_date_str():
     return get_iran_time().strftime("%Y/%m/%d")
 
 def convert_to_font(text, font_type):
-    """تبدیل اعداد به فونت مورد نظر"""
-    font_map = FONTS.get(font_type, FONTS['1'])
+    font_map = FONTS.get(font_type, FONTS['1'])['map']
     result = ""
     for char in text:
         if char.isdigit():
@@ -142,13 +131,33 @@ async def clear_user_session(user_id):
             client = user_sessions[user_id].get('client')
             if client:
                 await client.disconnect()
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error disconnecting session: {e}")
         del user_sessions[user_id]
 
-# ============ توابع سلف کلاینت ============
+# ============ توابع سلف کلاینت (چنداکانتی) ============
+
+def get_self_key(user_id, account_index):
+    return (str(user_id), account_index)
+
+async def get_user_session_by_index(user_id, account_index):
+    user_id_str = str(user_id)
+    selfs = self_data.get(user_id_str, [])
+    if account_index < len(selfs):
+        self_account = selfs[account_index]
+        if self_account.get('active', True):
+            return {
+                'session': self_account.get('session'),
+                'api_id': self_account.get('api_id'),
+                'api_hash': self_account.get('api_hash'),
+                'phone': self_account.get('phone'),
+                'index': account_index,
+                'data': self_account
+            }
+    return None
 
 async def get_user_session(user_id):
+    """برای سازگاری با کد قدیمی - اولین سشن فعال را برمیگرداند"""
     user_id_str = str(user_id)
     selfs = self_data.get(user_id_str, [])
     for idx, self_account in enumerate(selfs):
@@ -158,12 +167,12 @@ async def get_user_session(user_id):
                 'api_id': self_account.get('api_id'),
                 'api_hash': self_account.get('api_hash'),
                 'phone': self_account.get('phone'),
-                'index': idx
+                'index': idx,
+                'data': self_account
             }
     return None
 
-async def self_outgoing_message_handler(event, client, self_user_id):
-    """هندلر پیام‌های ارسالی سلف - بلاک کردن گیرنده پیام"""
+async def self_outgoing_message_handler(event, client, self_user_id, account_index):
     try:
         if not event.is_private:
             return
@@ -175,15 +184,16 @@ async def self_outgoing_message_handler(event, client, self_user_id):
         if not message or not message.text:
             return
         
-        # چک کردن کلمه "بلاک"
-        if "بلاک" not in message.text:
+        # فقط پیام دقیق "بلاک" رو قبول کن
+        if message.text.strip() != "بلاک":
             return
         
         chat = await client.get_entity(event.chat_id)
         if not chat:
             return
         
-        if hasattr(chat, 'id') and not hasattr(chat, 'title'):
+        # بررسی اینکه گیرنده یک کاربر باشد
+        if isinstance(chat, User):
             target_user = chat
             
             if target_user.id == self_user_id:
@@ -197,22 +207,26 @@ async def self_outgoing_message_handler(event, client, self_user_id):
                 
                 try:
                     await client.edit_message(event.chat_id, message.id, new_text)
-                except:
+                except Exception as e:
+                    logger.exception(f"Error editing message: {e}")
                     try:
                         await client.send_message(event.chat_id, new_text)
-                    except:
-                        pass
+                    except Exception as e2:
+                        logger.exception(f"Error sending message: {e2}")
                 
-                logger.info(f"User {target_user.id} blocked by self {self_user_id}")
+                logger.info(f"User {target_user.id} blocked by self {self_user_id} (index {account_index})")
                 
             except Exception as e:
-                logger.error(f"Error blocking: {e}")
+                logger.exception(f"Error blocking user: {e}")
+                try:
+                    await client.edit_message(event.chat_id, message.id, "❌ خطا در بلاک کردن کاربر!")
+                except:
+                    pass
                 
     except Exception as e:
-        logger.error(f"Error in outgoing handler: {e}")
+        logger.exception(f"Error in outgoing handler: {e}")
 
-async def self_incoming_message_handler(event, client, self_user_id):
-    """هندلر پیام‌های دریافتی سلف"""
+async def self_incoming_message_handler(event, client, self_user_id, account_index):
     try:
         if not event.is_private:
             return
@@ -228,7 +242,7 @@ async def self_incoming_message_handler(event, client, self_user_id):
         if not message or not message.text:
             return
         
-        if "بلاک" not in message.text:
+        if message.text.strip() != "بلاک":
             return
         
         target_user = None
@@ -237,8 +251,8 @@ async def self_incoming_message_handler(event, client, self_user_id):
                 replied = await event.get_reply_message()
                 if replied:
                     target_user = await client.get_entity(replied.sender_id)
-            except:
-                pass
+            except Exception as e:
+                logger.exception(f"Error getting reply: {e}")
         
         if not target_user:
             target_user = sender
@@ -251,41 +265,48 @@ async def self_incoming_message_handler(event, client, self_user_id):
             
             try:
                 await client.edit_message(event.chat_id, message.id, new_text)
-            except:
+            except Exception as e:
+                logger.exception(f"Error editing message: {e}")
                 try:
                     await client.send_message(event.chat_id, new_text)
-                except:
-                    pass
+                except Exception as e2:
+                    logger.exception(f"Error sending message: {e2}")
             
-            logger.info(f"User {target_user.id} blocked by self {self_user_id}")
+            logger.info(f"User {target_user.id} blocked by self {self_user_id} (index {account_index})")
             
         except Exception as e:
-            logger.error(f"Error blocking: {e}")
+            logger.exception(f"Error blocking user: {e}")
             
     except Exception as e:
-        logger.error(f"Error in incoming handler: {e}")
+        logger.exception(f"Error in incoming handler: {e}")
 
-async def start_salf_client(user_id):
+async def start_self_client(user_id, account_index):
+    """شروع سلف با اندیس مشخص"""
     try:
-        session_data = await get_user_session(user_id)
+        key = get_self_key(user_id, account_index)
+        
+        session_data = await get_user_session_by_index(user_id, account_index)
         if not session_data:
+            logger.error(f"No session found for user {user_id} index {account_index}")
             return False
         
-        if user_id in salf_clients:
+        # قطع کلاینت قبلی برای این اندیس
+        if key in self_clients:
             try:
-                await salf_clients[user_id].disconnect()
+                await self_clients[key].disconnect()
+            except Exception as e:
+                logger.exception(f"Error disconnecting old client: {e}")
+            del self_clients[key]
+        
+        if key in self_tasks:
+            self_tasks[key].cancel()
+            try:
+                await self_tasks[key]
             except:
                 pass
-            del salf_clients[user_id]
+            del self_tasks[key]
         
-        if user_id in salf_tasks:
-            salf_tasks[user_id].cancel()
-            try:
-                await salf_tasks[user_id]
-            except:
-                pass
-            del salf_tasks[user_id]
-        
+        # ایجاد کلاینت جدید
         client = TelegramClient(
             StringSession(session_data['session']),
             session_data['api_id'],
@@ -295,53 +316,65 @@ async def start_salf_client(user_id):
         
         if not await client.is_user_authorized():
             await client.disconnect()
+            logger.error(f"User {user_id} index {account_index} not authorized")
             return False
         
         me = await client.get_me()
         self_user_id = me.id
         
-        salf_clients[user_id] = client
+        self_clients[key] = client
         
+        # ثبت هندلرها
         @client.on(events.NewMessage(outgoing=True))
         async def outgoing_handler(event):
-            await self_outgoing_message_handler(event, client, self_user_id)
+            await self_outgoing_message_handler(event, client, self_user_id, account_index)
         
         @client.on(events.NewMessage(incoming=True))
         async def incoming_handler(event):
-            await self_incoming_message_handler(event, client, self_user_id)
+            await self_incoming_message_handler(event, client, self_user_id, account_index)
         
         async def run_client():
             try:
                 await client.run_until_disconnected()
             except Exception as e:
-                logger.error(f"Client disconnected: {e}")
+                logger.exception(f"Client disconnected for {key}: {e}")
         
         task = asyncio.create_task(run_client())
-        salf_tasks[user_id] = task
+        self_tasks[key] = task
         
+        logger.info(f"✅ Self client started for user {user_id} index {account_index}")
         return True
         
     except Exception as e:
-        logger.error(f"Error starting self client: {e}")
+        logger.exception(f"Error starting self client for user {user_id} index {account_index}: {e}")
         return False
 
-async def stop_salf_client(user_id):
-    if user_id in salf_clients:
-        try:
-            await salf_clients[user_id].disconnect()
-        except:
-            pass
-        del salf_clients[user_id]
+async def stop_self_client(user_id, account_index):
+    """قطع سلف با اندیس مشخص"""
+    key = get_self_key(user_id, account_index)
     
-    if user_id in salf_tasks:
-        salf_tasks[user_id].cancel()
+    if key in self_clients:
         try:
-            await salf_tasks[user_id]
+            await self_clients[key].disconnect()
+        except Exception as e:
+            logger.exception(f"Error disconnecting client: {e}")
+        del self_clients[key]
+    
+    if key in self_tasks:
+        self_tasks[key].cancel()
+        try:
+            await self_tasks[key]
         except:
             pass
-        del salf_tasks[user_id]
+        del self_tasks[key]
+    
+    logger.info(f"Self client stopped for user {user_id} index {account_index}")
 
-# ============ توابع ساعت با فونت ============
+# ============ توابع ساعت با فونت (چنداکانتی) ============
+
+def get_clock_key(user_id, account_index):
+    return (str(user_id), account_index)
+
 async def set_clock_on_profile(session_string, api_id, api_hash, font_type):
     try:
         client = TelegramClient(StringSession(session_string), api_id, api_hash)
@@ -354,22 +387,24 @@ async def set_clock_on_profile(session_string, api_id, api_hash, font_type):
         me = await client.get_me()
         first_name = me.first_name if me.first_name else ""
         last_name = me.last_name if me.last_name else ""
-        current_name = f"{first_name} {last_name}".strip()
         
-        if not current_name:
-            current_name = me.username if me.username else "کاربر"
+        # استفاده از first_name و last_name به صورت جداگانه
+        clean_first = re.sub(r'\s*\d{2}:\d{2}$', '', first_name).strip()
         
         time_str = get_iran_time_str()
         font_time = convert_to_font(time_str, font_type)
-        clean_name = re.sub(r'\s*\d{2}:\d{2}$', '', current_name).strip()
-        new_name = f"{clean_name} {font_time}".strip()
+        new_first = f"{clean_first} {font_time}".strip()
         
-        if new_name != current_name:
+        if new_first != first_name:
             try:
-                await client(UpdateProfileRequest(first_name=new_name))
+                await client(UpdateProfileRequest(
+                    first_name=new_first,
+                    last_name=last_name
+                ))
                 await client.disconnect()
                 return True
-            except:
+            except Exception as e:
+                logger.exception(f"Error updating profile: {e}")
                 await client.disconnect()
                 return False
         
@@ -377,7 +412,7 @@ async def set_clock_on_profile(session_string, api_id, api_hash, font_type):
         return True
         
     except Exception as e:
-        logger.error(f"Error in set_clock_on_profile: {e}")
+        logger.exception(f"Error in set_clock_on_profile: {e}")
         return False
 
 async def remove_clock_from_profile(session_string, api_id, api_hash):
@@ -392,19 +427,19 @@ async def remove_clock_from_profile(session_string, api_id, api_hash):
         me = await client.get_me()
         first_name = me.first_name if me.first_name else ""
         last_name = me.last_name if me.last_name else ""
-        current_name = f"{first_name} {last_name}".strip()
         
-        if not current_name:
-            current_name = me.username if me.username else "کاربر"
+        clean_first = re.sub(r'\s*\d{2}:\d{2}$', '', first_name).strip()
         
-        clean_name = re.sub(r'\s*\d{2}:\d{2}$', '', current_name).strip()
-        
-        if clean_name != current_name:
+        if clean_first != first_name:
             try:
-                await client(UpdateProfileRequest(first_name=clean_name))
+                await client(UpdateProfileRequest(
+                    first_name=clean_first,
+                    last_name=last_name
+                ))
                 await client.disconnect()
                 return True
-            except:
+            except Exception as e:
+                logger.exception(f"Error removing clock: {e}")
                 await client.disconnect()
                 return False
         
@@ -412,14 +447,16 @@ async def remove_clock_from_profile(session_string, api_id, api_hash):
         return True
         
     except Exception as e:
-        logger.error(f"Error in remove_clock_from_profile: {e}")
+        logger.exception(f"Error in remove_clock_from_profile: {e}")
         return False
 
-async def clock_loop(user_id, session_string, api_id, api_hash, font_type):
+async def clock_loop(user_id, account_index, session_string, api_id, api_hash, font_type):
+    clock_key = get_clock_key(user_id, account_index)
     last_minute = None
+    
     while True:
         try:
-            if user_id in clock_tasks and not clock_tasks[user_id]:
+            if clock_key in clock_tasks and not clock_tasks[clock_key]:
                 break
             
             current_minute = get_iran_time().strftime("%H:%M")
@@ -428,11 +465,12 @@ async def clock_loop(user_id, session_string, api_id, api_hash, font_type):
                 await set_clock_on_profile(session_string, api_id, api_hash, font_type)
                 last_minute = current_minute
             
-            await asyncio.sleep(1)
+            # هر 30 ثانیه چک کن (کافی است چون دقیقه تغییر میکنه)
+            await asyncio.sleep(30)
             
         except Exception as e:
-            logger.error(f"Error in clock loop: {e}")
-            await asyncio.sleep(1)
+            logger.exception(f"Error in clock loop for {clock_key}: {e}")
+            await asyncio.sleep(30)
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -469,8 +507,8 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
                 parse_mode='HTML'
             )
             await update.callback_query.answer()
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error in main_menu edit: {e}")
     else:
         await update.message.reply_text(
             text,
@@ -483,8 +521,8 @@ async def font_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = str(query.from_user.id)
     selfs = self_data.get(user_id, [])
@@ -503,8 +541,8 @@ async def font_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         try:
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
     
     text = f"""
@@ -525,16 +563,16 @@ async def font_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
 # ============ انتخاب فونت ============
 async def font_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[2])
@@ -543,63 +581,59 @@ async def font_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if index >= len(selfs):
         try:
             await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
-    
-    context.user_data['font_index'] = index
-    context.user_data['font_step'] = 'waiting_font'
     
     text = f"""
 🎨 <b>انتخاب فونت ساعت</b>
 
 لطفاً یکی از فونت‌های زیر را انتخاب کنید:
-
-<b>فونت 1:</b> 𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗
-<b>فونت 2:</b> 𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵
-<b>فونت 3:</b> ⓿⓵⓶⓷⓸⓹⓺⓻⓼⓽
-<b>فونت 4:</b> ⓪①②③④⑤⑥⑦⑧⑨
-<b>فونت 5:</b> ₀₁₂₃₄₅₆₇₈₉
-<b>فونت 6:</b> 𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿
-<b>فونت 7:</b> ⁰¹²³⁴⁵⁶⁷⁸⁹
-<b>فونت 8:</b> ⊘①②③④⑤⑥⑦⑧⑨
-<b>فونت 9:</b> 𝟶𝟷ӠӠ4ƼϬ7𝟾९
-<b>فونت 10:</b> 𝟷ϩӠ4ƼϬ7𝟾₉₀
-<b>فونت 11:</b> ¹²³⁴⁵₆₇₈₉₀
-
-عدد فونت مورد نظر را وارد کنید (1 تا 11):
 """
     
-    keyboard = [[InlineKeyboardButton("🔙 لغو و بازگشت", callback_data=f"manage_{index}")]]
+    keyboard = []
+    
+    for font_id, font_info in FONTS.items():
+        keyboard.append([InlineKeyboardButton(
+            f"{font_info['display']} - {font_info['name']}",
+            callback_data=f"font_apply_{index}_{font_id}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton("🔙 لغو و بازگشت", callback_data=f"manage_{index}")])
     
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
-# ============ دریافت فونت ============
-async def handle_font_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
+# ============ اعمال فونت ============
+async def font_apply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
-    if 'font_step' not in context.user_data or context.user_data['font_step'] != 'waiting_font':
-        await update.message.reply_text("❌ <b>لطفاً از دکمه تنظیم فونت استفاده کنید.</b>", parse_mode='HTML')
+    parts = query.data.split('_')
+    if len(parts) < 4:
+        logger.error(f"Invalid font_apply data: {query.data}")
         return
     
     try:
-        font_num = int(update.message.text.strip())
-        if font_num < 1 or font_num > 11:
-            await update.message.reply_text("❌ <b>عدد باید بین 1 تا 11 باشد!</b>\n\nلطفاً مجدداً وارد کنید:", parse_mode='HTML')
-            return
-    except:
-        await update.message.reply_text("❌ <b>لطفاً یک عدد معتبر وارد کنید!</b>", parse_mode='HTML')
+        index = int(parts[2])
+        font_type = parts[3]
+    except (ValueError, IndexError) as e:
+        logger.exception(f"Error parsing font_apply data: {e}")
         return
     
-    index = context.user_data['font_index']
-    font_type = str(font_num)
+    user_id = str(query.from_user.id)
     
     selfs = self_data.get(user_id, [])
     if index >= len(selfs):
-        await update.message.reply_text("❌ <b>سلف مورد نظر یافت نشد!</b>", parse_mode='HTML')
+        try:
+            await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
     
     self_account = selfs[index]
@@ -610,18 +644,23 @@ async def handle_font_selection(update: Update, context: ContextTypes.DEFAULT_TY
     
     # ذخیره فونت
     selfs[index]['font_type'] = font_type
-    save_data()
+    await save_data()
     
     # بروزرسانی ساعت
     result = await set_clock_on_profile(session_string, api_id, api_hash, font_type)
     
     if result:
+        time_str = get_iran_time_str()
+        font_time = convert_to_font(time_str, font_type)
+        selfs[index]['active_time'] = time_str
+        await save_data()
+        
         text = f"""
 ✅ <b>فونت با موفقیت تغییر کرد!</b>
 
 👤 نام اکانت: <b>{account_name}</b>
 🎨 فونت انتخابی: <b>{FONT_NAMES.get(font_type, 'فونت 1')}</b>
-🕐 نمونه: <code>{convert_to_font(get_iran_time_str(), font_type)}</code>
+🕐 ساعت فعلی: <code>{font_time}</code>
 
 ساعت با فونت جدید بروزرسانی شد.
 """
@@ -633,24 +672,22 @@ async def handle_font_selection(update: Update, context: ContextTypes.DEFAULT_TY
 """
     
     keyboard = [
-        [InlineKeyboardButton("🔙 بازگشت", callback_data=f"manage_{index}")],
+        [InlineKeyboardButton("🔙 بازگشت به مدیریت", callback_data=f"manage_{index}")],
         [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
     ]
     
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    
-    if 'font_step' in context.user_data:
-        del context.user_data['font_step']
-    if 'font_index' in context.user_data:
-        del context.user_data['font_index']
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
 # ============ تنظیمات ============
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = str(query.from_user.id)
     selfs = self_data.get(user_id, [])
@@ -669,8 +706,8 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         try:
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
     
     text = f"""
@@ -689,16 +726,16 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
 # ============ لیست سلف‌ها ============
 async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = str(query.from_user.id)
     selfs = self_data.get(user_id, [])
@@ -717,8 +754,8 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         try:
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
     
     text = f"""
@@ -754,16 +791,16 @@ async def list_selfs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
 # ============ مدیریت سلف ============
 async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[1])
@@ -772,8 +809,8 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if index >= len(selfs):
         try:
             await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
     
     self_account = selfs[index]
@@ -784,8 +821,13 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
     font_type = self_account.get('font_type', '1')
     font_name = FONT_NAMES.get(font_type, 'فونت 1')
     
+    # بررسی وضعیت سلف
+    key = get_self_key(int(user_id), index)
+    is_connected = key in self_clients
+    
     time_display = f"{account_name} {active_time}" if active_time != 'تنظیم نشده' else f"{account_name} - ساعت تنظیم نشده"
     clock_status = "🟢 <b>فعال</b>" if clock_active else "🔴 <b>غیرفعال</b>"
+    status_self = "🟢 متصل" if is_connected else "🔴 قطع"
     
     text = f"""
 ⚙️ <b>مدیریت سلف شماره {index + 1}</b>
@@ -794,14 +836,20 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
 👤 نام اکانت: <b>{account_name}</b>
 🕐 ساعت: <code>{time_display}</code>
 🎨 فونت: {font_name}
-📊 وضعیت: {clock_status}
+📊 وضعیت ساعت: {clock_status}
+🔗 وضعیت سلف: {status_self}
 
 لطفاً یکی از گزینه‌های زیر را انتخاب فرمایید:
 """
     
-    keyboard = [
-        [InlineKeyboardButton("📸 تنظیم پروفایل", callback_data=f"new_profile_{index}")]
-    ]
+    keyboard = []
+    
+    if not is_connected:
+        keyboard.append([InlineKeyboardButton("🔄 اتصال سلف", callback_data=f"connect_self_{index}")])
+    else:
+        keyboard.append([InlineKeyboardButton("🔌 قطع سلف", callback_data=f"disconnect_self_{index}")])
+    
+    keyboard.append([InlineKeyboardButton("📸 تنظیم پروفایل", callback_data=f"new_profile_{index}")])
     
     if clock_active:
         keyboard.append([InlineKeyboardButton("⏰ غیرفعال کردن ساعت", callback_data=f"deactivate_clock_{index}")])
@@ -813,16 +861,62 @@ async def manage_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
+
+# ============ اتصال/قطع سلف ============
+async def connect_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
+    
+    user_id = str(query.from_user.id)
+    index = int(query.data.split('_')[2])
+    
+    result = await start_self_client(int(user_id), index)
+    
+    if result:
+        text = f"✅ <b>سلف شماره {index + 1} با موفقیت متصل شد!</b>"
+    else:
+        text = f"❌ <b>خطا در اتصال سلف شماره {index + 1}!</b>\nلطفاً مطمئن شوید که اطلاعات اکانت صحیح است."
+    
+    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data=f"manage_{index}")]]
+    
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
+
+async def disconnect_self(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
+    
+    user_id = str(query.from_user.id)
+    index = int(query.data.split('_')[2])
+    
+    await stop_self_client(int(user_id), index)
+    
+    text = f"✅ <b>سلف شماره {index + 1} با موفقیت قطع شد!</b>"
+    
+    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data=f"manage_{index}")]]
+    
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
 # ============ تنظیم پروفایل جدید ============
 async def new_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[2])
@@ -831,8 +925,8 @@ async def new_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if index >= len(selfs):
         try:
             await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
     
     context.user_data['profile_index'] = index
@@ -847,7 +941,8 @@ async def new_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ⚠️ <b>نکات مهم:</b>
 • می‌توانید چندین عکس و فیلم ارسال کنید
 • پس از ارسال همه، دکمه "اتمام ارسال" را بزنید
-• برای عکس‌ها، سایز مناسب توصیه می‌شود
+• حجم فایل حداکثر 10 مگابایت
+• فرمت‌های پشتیبانی شده: JPG, PNG, MP4
 """
     
     keyboard = [
@@ -857,8 +952,8 @@ async def new_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
 # ============ دریافت مدیا برای پروفایل ============
 async def handle_profile_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -868,21 +963,45 @@ async def handle_profile_media(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("❌ <b>لطفاً از دکمه تنظیم پروفایل استفاده کنید.</b>", parse_mode='HTML')
         return
     
+    # محدودیت حجم: حداکثر 10 مگابایت
+    MAX_FILE_SIZE = 10 * 1024 * 1024
+    
     if update.message.photo:
         file = await update.message.photo[-1].get_file()
+        file_size = file.file_size
+        if file_size > MAX_FILE_SIZE:
+            await update.message.reply_text(f"❌ <b>حجم فایل بیشتر از 10 مگابایت است!</b>\nحجم: {file_size // (1024*1024)} مگابایت", parse_mode='HTML')
+            return
         file_ext = ".jpg"
     elif update.message.document:
         file = await update.message.document.get_file()
+        file_size = file.file_size
+        if file_size > MAX_FILE_SIZE:
+            await update.message.reply_text(f"❌ <b>حجم فایل بیشتر از 10 مگابایت است!</b>\nحجم: {file_size // (1024*1024)} مگابایت", parse_mode='HTML')
+            return
         file_ext = os.path.splitext(update.message.document.file_name)[1] if update.message.document.file_name else ".jpg"
+        if file_ext.lower() not in ['.jpg', '.jpeg', '.png', '.mp4']:
+            await update.message.reply_text("❌ <b>فرمت فایل پشتیبانی نمی‌شود!</b>\nفرمت‌های مجاز: JPG, PNG, MP4", parse_mode='HTML')
+            return
     elif update.message.video:
         file = await update.message.video.get_file()
+        file_size = file.file_size
+        if file_size > MAX_FILE_SIZE:
+            await update.message.reply_text(f"❌ <b>حجم فایل بیشتر از 10 مگابایت است!</b>\nحجم: {file_size // (1024*1024)} مگابایت", parse_mode='HTML')
+            return
         file_ext = ".mp4"
     else:
         await update.message.reply_text("❌ <b>لطفاً فقط عکس یا فیلم ارسال کنید!</b>", parse_mode='HTML')
         return
     
     file_path = f"temp_profile_{user_id}_{len(context.user_data.get('profile_files', []))}{file_ext}"
-    await file.download_to_drive(file_path)
+    
+    try:
+        await file.download_to_drive(file_path)
+    except Exception as e:
+        logger.exception(f"Error downloading file: {e}")
+        await update.message.reply_text(f"❌ <b>خطا در دانلود فایل:</b> {str(e)}", parse_mode='HTML')
+        return
     
     if 'profile_files' not in context.user_data:
         context.user_data['profile_files'] = []
@@ -908,8 +1027,8 @@ async def done_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[2])
@@ -918,8 +1037,8 @@ async def done_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if index >= len(selfs):
         try:
             await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
     
     files = context.user_data.get('profile_files', [])
@@ -927,8 +1046,8 @@ async def done_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not files:
         try:
             await query.edit_message_text("❌ <b>هیچ فایلی ارسال نشده است!</b>\n\nلطفاً حداقل یک عکس یا فیلم ارسال کنید.", parse_mode='HTML')
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
     
     text = f"""
@@ -948,8 +1067,8 @@ async def done_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
 # ============ دریافت تعداد دفعات ============
 async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -983,7 +1102,6 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     account_name = self_account.get('account_name', 'کاربر')
     
     total_count = len(files) * count
-    days_needed = (total_count + 499) // 500
     
     await update.message.reply_text(
         f"""
@@ -993,10 +1111,9 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
 📁 تعداد فایل‌ها: <b>{len(files)}</b>
 🔢 تعداد دفعات هر فایل: <b>{count}</b>
 📊 مجموع تنظیمات: <b>{total_count}</b>
-📅 تعداد روزهای مورد نیاز: <b>{days_needed} روز</b>
 
 ⏳ لطفاً صبر کنید...
-<b>⚠️ این عملیات ممکن است چند روز طول بکشد.</b>
+<b>⚠️ این عملیات ممکن است چند دقیقه طول بکشد.</b>
 """,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("❌ لغو عملیات", callback_data="cancel_profile")]
@@ -1032,8 +1149,8 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
         
         try:
             os.remove(file_path)
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error removing temp file: {e}")
     
     if 'profile_files' in context.user_data:
         del context.user_data['profile_files']
@@ -1086,12 +1203,13 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
             await context.bot.send_message(chat_id, "❌ اکانت معتبر نیست!")
             return False, 0, 0, 0
         
-        max_per_day = 500
+        max_per_day = 500  # محدودیت داخلی برنامه
         success_count = 0
         fail_count = 0
         today_count = 0
         day = 1
         status_msg = None
+        wait_until_next_day = False
         
         for i in range(count):
             if user_id in profile_status and profile_status[user_id] == 'cancel':
@@ -1102,14 +1220,28 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
                 await client.disconnect()
                 return False, success_count, fail_count, day
             
-            if today_count >= max_per_day:
-                day += 1
-                today_count = 0
-                await context.bot.send_message(
-                    chat_id,
-                    f"📅 روز {day} شروع شد - باقی‌مانده: {count - success_count}"
-                )
-                await asyncio.sleep(60)
+            # اگر به محدودیت روزانه رسیدیم، تا روز بعد صبر کن
+            if wait_until_next_day or today_count >= max_per_day:
+                wait_until_next_day = True
+                # محاسبه زمان تا روز بعد
+                now = get_iran_time()
+                tomorrow = now + timedelta(days=1)
+                next_day_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+                wait_seconds = (next_day_start - now).total_seconds()
+                
+                if wait_seconds > 0:
+                    await context.bot.send_message(
+                        chat_id,
+                        f"📅 به محدودیت روزانه رسیدیم. روز بعد در {int(wait_seconds // 3600)} ساعت و {int((wait_seconds % 3600) // 60)} دقیقه شروع می‌شود."
+                    )
+                    await asyncio.sleep(wait_seconds)
+                    day += 1
+                    today_count = 0
+                    wait_until_next_day = False
+                    await context.bot.send_message(
+                        chat_id,
+                        f"📅 روز {day} شروع شد - باقی‌مانده: {count - success_count}"
+                    )
             
             try:
                 await client(UploadProfilePhotoRequest(
@@ -1143,13 +1275,13 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
                     await asyncio.sleep(5)
                     
             except FloodWaitError as e:
-                wait_time = min(e.seconds, 300)
+                wait_time = e.seconds  # رعایت دقیق زمان اعلام‌شده
                 await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
                 await asyncio.sleep(wait_time + 5)
                 fail_count += 1
                 
             except Exception as e:
-                logger.error(f"Error setting profile: {e}")
+                logger.exception(f"Error setting profile: {e}")
                 fail_count += 1
                 await asyncio.sleep(10)
         
@@ -1157,7 +1289,7 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
         return True, success_count, fail_count, day
         
     except Exception as e:
-        logger.error(f"Error in set_profile_with_daily_limit: {e}")
+        logger.exception(f"Error in set_profile_with_daily_limit: {e}")
         await context.bot.send_message(chat_id, f"❌ خطا: {str(e)[:200]}")
         return False, 0, 0, 0
 
@@ -1166,15 +1298,16 @@ async def cancel_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = str(query.from_user.id)
     profile_status[user_id] = 'cancel'
     
     try:
         await query.edit_message_text("⏳ در حال لغو عملیات...", parse_mode='HTML')
-    except:
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
         await context.bot.send_message(query.message.chat_id, "⏳ در حال لغو عملیات...", parse_mode='HTML')
 
 # ============ فعال کردن ساعت ============
@@ -1182,8 +1315,8 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[2])
@@ -1192,8 +1325,8 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if index >= len(selfs):
         try:
             await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
     
     self_account = selfs[index]
@@ -1210,13 +1343,12 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if result:
         selfs[index]['active_time'] = time_str
         selfs[index]['clock_active'] = True
-        save_data()
+        await save_data()
         
-        if user_id not in clock_tasks or not clock_tasks[user_id]:
-            clock_tasks[user_id] = True
-            asyncio.create_task(clock_loop(user_id, session_string, api_id, api_hash, font_type))
-        
-        await start_salf_client(int(user_id))
+        clock_key = get_clock_key(int(user_id), index)
+        if clock_key not in clock_tasks or not clock_tasks[clock_key]:
+            clock_tasks[clock_key] = True
+            asyncio.create_task(clock_loop(int(user_id), index, session_string, api_id, api_hash, font_type))
         
         text = f"""
 ✅ <b>ساعت با موفقیت فعال شد!</b>
@@ -1241,16 +1373,16 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
 # ============ غیرفعال کردن ساعت ============
 async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = str(query.from_user.id)
     index = int(query.data.split('_')[2])
@@ -1259,8 +1391,8 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if index >= len(selfs):
         try:
             await query.edit_message_text("❌ <b>سلف مورد نظر یافت نشد.</b>", parse_mode='HTML')
-        except:
-            pass
+        except Exception as e:
+            logger.exception(f"Error editing message: {e}")
         return
     
     self_account = selfs[index]
@@ -1273,12 +1405,12 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if result:
         selfs[index]['clock_active'] = False
-        save_data()
+        await save_data()
         
-        if user_id in clock_tasks:
-            clock_tasks[user_id] = False
-        
-        await stop_salf_client(int(user_id))
+        clock_key = get_clock_key(int(user_id), index)
+        if clock_key in clock_tasks:
+            clock_tasks[clock_key] = False
+            del clock_tasks[clock_key]
         
         text = f"""
 ❌ <b>ساعت با موفقیت غیرفعال شد!</b>
@@ -1301,16 +1433,16 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
 # ============ دکمه ساخت سلف ============
 async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = query.from_user.id
     await clear_user_session(user_id)
@@ -1330,8 +1462,8 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error editing message: {e}")
 
 # ============ دریافت شماره ============
 async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1451,6 +1583,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
     except Exception as e:
+        logger.exception(f"Error sending code: {e}")
         await context.bot.edit_message_text(
             chat_id=update.effective_chat.id,
             message_id=msg.message_id,
@@ -1505,7 +1638,8 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 elif me and me.username:
                     account_name = me.username
             await client2.disconnect()
-        except:
+        except Exception as e:
+            logger.exception(f"Error getting account name: {e}")
             account_name = "بدون نام"
         
         user_id_str = str(user_id)
@@ -1515,7 +1649,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         time_str = get_iran_time_str()
         date_str = get_iran_date_str()
         
-        self_data[user_id_str].append({
+        new_account = {
             "session": session_string,
             "phone": phone,
             "api_id": api_id,
@@ -1527,20 +1661,22 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "font_type": "1",
             "created": f"{date_str} {time_str}",
             "last_update": f"{date_str} {time_str}"
-        })
-        save_data()
+        }
+        
+        self_data[user_id_str].append(new_account)
+        await save_data()
         
         await clear_user_session(user_id)
         
-        # شروع خودکار سلف
-        await start_salf_client(user_id)
+        # شروع خودکار سلف با اندیس جدید
+        new_index = len(self_data[user_id_str]) - 1
+        await start_self_client(user_id, new_index)
         
         text = f"""
 ✅ <b>سلف جدید با موفقیت ایجاد شد!</b>
 
 📱 شماره: <code>{phone}</code>
 👤 نام اکانت: <b>{account_name}</b>
-🔑 شناسه جلسه: <code>{mask_string(session_string, 10)}</code>
 
 سلف جدید به لیست شما اضافه گردید.
 🔹 سلف به‌طور خودکار فعال شده است!
@@ -1576,6 +1712,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
     except Exception as e:
+        logger.exception(f"Error in handle_code: {e}")
         await update.message.reply_text(
             f"❌ <b>خطا:</b> {str(e)[:200]}",
             parse_mode='HTML'
@@ -1615,7 +1752,8 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 elif me and me.username:
                     account_name = me.username
             await client2.disconnect()
-        except:
+        except Exception as e:
+            logger.exception(f"Error getting account name: {e}")
             account_name = "بدون نام"
         
         user_id_str = str(user_id)
@@ -1625,7 +1763,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         time_str = get_iran_time_str()
         date_str = get_iran_date_str()
         
-        self_data[user_id_str].append({
+        new_account = {
             "session": session_string,
             "phone": data['phone'],
             "api_id": data['api_id'],
@@ -1637,19 +1775,21 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "font_type": "1",
             "created": f"{date_str} {time_str}",
             "last_update": f"{date_str} {time_str}"
-        })
-        save_data()
+        }
+        
+        self_data[user_id_str].append(new_account)
+        await save_data()
         
         await clear_user_session(user_id)
         
-        await start_salf_client(user_id)
+        new_index = len(self_data[user_id_str]) - 1
+        await start_self_client(user_id, new_index)
         
         text = f"""
 ✅ <b>سلف جدید با موفقیت ایجاد شد!</b>
 
 📱 شماره: <code>{data['phone']}</code>
 👤 نام اکانت: <b>{account_name}</b>
-🔑 شناسه جلسه: <code>{mask_string(session_string, 10)}</code>
 
 سلف جدید به لیست شما اضافه گردید.
 🔹 سلف به‌طور خودکار فعال شده است!
@@ -1665,6 +1805,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         
     except Exception as e:
+        logger.exception(f"Error in handle_password: {e}")
         await update.message.reply_text(
             f"❌ <b>رمز عبور اشتباه است.</b>\n\n{str(e)[:100]}",
             parse_mode='HTML'
@@ -1675,27 +1816,25 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
         await query.answer()
-    except:
-        pass
+    except Exception as e:
+        logger.exception(f"Error answering query: {e}")
     
     user_id = query.from_user.id
     await clear_user_session(user_id)
     
+    # پاک کردن داده‌های موقت
     if 'profile_files' in context.user_data:
         for file_path in context.user_data['profile_files']:
             try:
-                os.remove(file_path)
-            except:
-                pass
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except Exception as e:
+                logger.exception(f"Error removing file: {e}")
         del context.user_data['profile_files']
     if 'profile_step' in context.user_data:
         del context.user_data['profile_step']
     if 'profile_index' in context.user_data:
         del context.user_data['profile_index']
-    if 'font_step' in context.user_data:
-        del context.user_data['font_step']
-    if 'font_index' in context.user_data:
-        del context.user_data['font_index']
     
     await main_menu(update, context, edit=True)
 
@@ -1714,12 +1853,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         elif step == 'waiting_count':
             await handle_profile_count(update, context)
-            return
-    
-    if 'font_step' in context.user_data:
-        step = context.user_data['font_step']
-        if step == 'waiting_font':
-            await handle_font_selection(update, context)
             return
     
     if user_id in user_sessions:
@@ -1757,6 +1890,9 @@ def main():
         application.add_handler(CallbackQueryHandler(settings, pattern="^settings$"))
         application.add_handler(CallbackQueryHandler(font_settings, pattern="^font_settings$"))
         application.add_handler(CallbackQueryHandler(font_select, pattern="^font_select_"))
+        application.add_handler(CallbackQueryHandler(font_apply, pattern="^font_apply_"))
+        application.add_handler(CallbackQueryHandler(connect_self, pattern="^connect_self_"))
+        application.add_handler(CallbackQueryHandler(disconnect_self, pattern="^disconnect_self_"))
         application.add_handler(CallbackQueryHandler(new_profile, pattern="^new_profile_"))
         application.add_handler(CallbackQueryHandler(done_profile, pattern="^done_profile_"))
         application.add_handler(CallbackQueryHandler(cancel_profile, pattern="^cancel_profile$"))
