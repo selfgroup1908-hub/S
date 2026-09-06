@@ -8,12 +8,12 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from telethon import events
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError, FloodWaitError
 from telethon.tl.functions.account import UpdateProfileRequest, UpdateUsernameRequest
 from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
-from telethon.tl.functions.messages import SendMessageRequest
-from telethon.tl.types import InputPhoto, MessageMediaPhoto, MessageMediaDocument
 from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
+from telethon.tl.types import InputPhoto, MessageMediaPhoto, MessageMediaDocument
 import urllib.request
 
 # ============ تنظیمات ============
@@ -31,7 +31,7 @@ clock_tasks = {}
 profile_tasks = {}
 profile_status = {}
 clock_profile_tasks = {}
-block_tasks = {}
+salf_clients = {}
 
 # ============ فایل ذخیره اطلاعات ============
 DATA_FILE = "selfs.json"
@@ -105,6 +105,106 @@ async def clear_user_session(user_id):
         except:
             pass
         del user_sessions[user_id]
+
+# ============ توابع سلف کلاینت و بلاک ============
+async def get_user_session(user_id):
+    user_id_str = str(user_id)
+    selfs = self_data.get(user_id_str, [])
+    for self_account in selfs:
+        if self_account.get('active', True):
+            return {
+                'session': self_account.get('session'),
+                'api_id': self_account.get('api_id'),
+                'api_hash': self_account.get('api_hash'),
+                'phone': self_account.get('phone')
+            }
+    return None
+
+async def self_message_handler(event, client, user_id):
+    try:
+        if not event.is_private:
+            return
+        
+        sender = await event.get_sender()
+        if not sender:
+            return
+        
+        if sender.id == user_id:
+            return
+        
+        message = event.message
+        if not message:
+            return
+        
+        if message.text and "بلاک" in message.text:
+            try:
+                await client(BlockRequest(id=sender.id))
+                
+                try:
+                    await client.edit_message(
+                        event.chat_id,
+                        message.id,
+                        f"◂ کاربر @{sender.username if sender.username else 'کاربر'} بلاک شد !"
+                    )
+                except:
+                    try:
+                        await client.send_message(
+                            event.chat_id,
+                            f"◂ کاربر @{sender.username if sender.username else 'کاربر'} بلاک شد !"
+                        )
+                    except:
+                        pass
+                
+                logger.info(f"User {sender.id} blocked by self {user_id}")
+            except Exception as e:
+                logger.error(f"Error blocking user: {e}")
+                
+    except Exception as e:
+        logger.error(f"Error in self_message_handler: {e}")
+
+async def start_salf_client(user_id):
+    try:
+        session_data = get_user_session(user_id)
+        if not session_data:
+            return False
+        
+        if user_id in salf_clients:
+            try:
+                await salf_clients[user_id].disconnect()
+            except:
+                pass
+            del salf_clients[user_id]
+        
+        client = TelegramClient(
+            StringSession(session_data['session']),
+            session_data['api_id'],
+            session_data['api_hash']
+        )
+        await client.connect()
+        
+        if not await client.is_user_authorized():
+            await client.disconnect()
+            return False
+        
+        salf_clients[user_id] = client
+        
+        @client.on(events.NewMessage)
+        async def message_handler(event):
+            await self_message_handler(event, client, user_id)
+        
+        @client.on(events.MessageEdited)
+        async def edited_handler(event):
+            await self_message_handler(event, client, user_id)
+        
+        await client.run_until_disconnected()
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error in start_salf_client for user {user_id}: {e}")
+        return False
+
+async def start_self_for_user(user_id):
+    asyncio.create_task(start_salf_client(user_id))
 
 # ============ توابع ساعت ============
 async def set_clock_on_profile(session_string, api_id, api_hash):
@@ -197,29 +297,6 @@ async def clock_loop(user_id, session_string, api_id, api_hash):
         except Exception as e:
             logger.error(f"Error in clock loop: {e}")
             await asyncio.sleep(1)
-
-# ============ توابع بلاک ============
-async def block_user_in_self(session_string, api_id, api_hash, user_id, chat_id, context):
-    try:
-        client = TelegramClient(StringSession(session_string), api_id, api_hash)
-        await client.connect()
-        
-        if not await client.is_user_authorized():
-            await client.disconnect()
-            return False
-        
-        # بلاک کردن کاربر
-        try:
-            await client(BlockRequest(id=user_id))
-            await client.disconnect()
-            return True
-        except:
-            await client.disconnect()
-            return False
-            
-    except Exception as e:
-        logger.error(f"Error in block_user: {e}")
-        return False
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -576,7 +653,6 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
                     status_msg = await context.bot.send_message(chat_id, f"✅ {success_count} از {count} - ساعت {time_str} تنظیم شد")
                 
                 if i < count - 1:
-                    # پیام استراحت 60 ثانیه
                     rest_msg = await context.bot.send_message(chat_id, "⏳ استراحت 60 ثانیه...")
                     for remaining in range(60, 0, -1):
                         try:
@@ -589,7 +665,6 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
                             pass
                         await asyncio.sleep(1)
                     
-                    # پاک کردن پیام استراحت
                     if rest_msg:
                         try:
                             await context.bot.delete_message(chat_id, rest_msg.message_id)
@@ -600,7 +675,6 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
             except FloodWaitError as e:
                 wait_time = min(e.seconds, 300)
                 
-                # حذف پیام قبلی محدودیت
                 if wait_msg:
                     try:
                         await context.bot.delete_message(chat_id, wait_msg.message_id)
@@ -608,7 +682,6 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
                         pass
                     wait_msg = None
                 
-                # ارسال پیام جدید با تایمر
                 wait_msg = await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
                 
                 for remaining in range(wait_time, 0, -1):
@@ -622,7 +695,6 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
                         pass
                     await asyncio.sleep(1)
                 
-                # بعد از تموم شدن تایمر، پیام رو پاک کن
                 if wait_msg:
                     try:
                         await context.bot.delete_message(chat_id, wait_msg.message_id)
@@ -946,7 +1018,8 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     account_name = self_account.get('account_name', 'کاربر')
     
     total_count = len(files) * count
-    days_needed = (total_count + 499) // 500    
+    days_needed = (total_count + 499) // 500
+    
     await update.message.reply_text(
         f"""
 🚀 <b>شروع تنظیم پروفایل</b>
@@ -987,8 +1060,7 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
         
         success, s_count, f_count, days = await set_profile_with_daily_limit(
             session_string, api_id, api_hash, file_path, count,
-            user_id, update.effective_chat.id, context, file_index, len(files),
-            wait_msg, rest_msg
+            user_id, update.effective_chat.id, context, file_index, len(files)
         )
         
         total_success += s_count
@@ -1041,7 +1113,7 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 # ============ تنظیم پروفایل با محدودیت روزانه ============
-async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_path, count, user_id, chat_id, context, file_index, total_files, wait_msg=None, rest_msg=None):
+async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_path, count, user_id, chat_id, context, file_index, total_files):
     try:
         client = TelegramClient(StringSession(session_string), api_id, api_hash)
         await client.connect()
@@ -1057,6 +1129,8 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
         today_count = 0
         day = 1
         status_msg = None
+        wait_msg = None
+        rest_msg = None
         
         for i in range(count):
             if user_id in profile_status and profile_status[user_id] == 'cancel':
@@ -1102,7 +1176,6 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
                     )
                 
                 if (i + 1) % 10 == 0 and i + 1 < count:
-                    # پیام استراحت
                     rest_msg = await context.bot.send_message(chat_id, "⏳ استراحت 60 ثانیه...")
                     for remaining in range(60, 0, -1):
                         try:
@@ -1115,7 +1188,6 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
                             pass
                         await asyncio.sleep(1)
                     
-                    # پاک کردن پیام استراحت
                     if rest_msg:
                         try:
                             await context.bot.delete_message(chat_id, rest_msg.message_id)
@@ -1130,7 +1202,6 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
             except FloodWaitError as e:
                 wait_time = min(e.seconds, 300)
                 
-                # حذف پیام قبلی محدودیت
                 if wait_msg:
                     try:
                         await context.bot.delete_message(chat_id, wait_msg.message_id)
@@ -1138,7 +1209,6 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
                         pass
                     wait_msg = None
                 
-                # ارسال پیام جدید با تایمر
                 wait_msg = await context.bot.send_message(chat_id, f"⏳ محدودیت تلگرام، {wait_time} ثانیه صبر...")
                 
                 for remaining in range(wait_time, 0, -1):
@@ -1152,7 +1222,6 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
                         pass
                     await asyncio.sleep(1)
                 
-                # بعد از تموم شدن تایمر، پیام رو پاک کن
                 if wait_msg:
                     try:
                         await context.bot.delete_message(chat_id, wait_msg.message_id)
@@ -1228,6 +1297,9 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id not in clock_tasks or not clock_tasks[user_id]:
             clock_tasks[user_id] = True
             asyncio.create_task(clock_loop(user_id, session_string, api_id, api_hash))
+        
+        # شروع کلاینت سلف برای بلاک
+        asyncio.create_task(start_salf_client(int(user_id)))
         
         text = f"""
 ✅ <b>ساعت با موفقیت فعال شد!</b>
@@ -1539,6 +1611,9 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await clear_user_session(user_id)
         
+        # شروع کلاینت سلف برای بلاک
+        asyncio.create_task(start_salf_client(user_id))
+        
         text = f"""
 ✅ <b>سلف جدید با موفقیت ایجاد شد!</b>
 
@@ -1642,6 +1717,9 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_data()
         
         await clear_user_session(user_id)
+        
+        # شروع کلاینت سلف برای بلاک
+        asyncio.create_task(start_salf_client(user_id))
         
         text = f"""
 ✅ <b>سلف جدید با موفقیت ایجاد شد!</b>
