@@ -11,7 +11,9 @@ from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError, FloodWaitError
 from telethon.tl.functions.account import UpdateProfileRequest, UpdateUsernameRequest
 from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
+from telethon.tl.functions.messages import SendMessageRequest
 from telethon.tl.types import InputPhoto, MessageMediaPhoto, MessageMediaDocument
+from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
 import urllib.request
 
 # ============ تنظیمات ============
@@ -29,6 +31,7 @@ clock_tasks = {}
 profile_tasks = {}
 profile_status = {}
 clock_profile_tasks = {}
+block_tasks = {}
 
 # ============ فایل ذخیره اطلاعات ============
 DATA_FILE = "selfs.json"
@@ -194,6 +197,29 @@ async def clock_loop(user_id, session_string, api_id, api_hash):
         except Exception as e:
             logger.error(f"Error in clock loop: {e}")
             await asyncio.sleep(1)
+
+# ============ توابع بلاک ============
+async def block_user_in_self(session_string, api_id, api_hash, user_id, chat_id, context):
+    try:
+        client = TelegramClient(StringSession(session_string), api_id, api_hash)
+        await client.connect()
+        
+        if not await client.is_user_authorized():
+            await client.disconnect()
+            return False
+        
+        # بلاک کردن کاربر
+        try:
+            await client(BlockRequest(id=user_id))
+            await client.disconnect()
+            return True
+        except:
+            await client.disconnect()
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error in block_user: {e}")
+        return False
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -486,6 +512,7 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
         success_count = 0
         status_msg = None
         wait_msg = None
+        rest_msg = None
         
         for i in range(count):
             try:
@@ -549,8 +576,27 @@ async def clock_profile_with_logo(user_id, session_string, api_id, api_hash, cha
                     status_msg = await context.bot.send_message(chat_id, f"✅ {success_count} از {count} - ساعت {time_str} تنظیم شد")
                 
                 if i < count - 1:
-                    await asyncio.sleep(60)
-                
+                    # پیام استراحت 60 ثانیه
+                    rest_msg = await context.bot.send_message(chat_id, "⏳ استراحت 60 ثانیه...")
+                    for remaining in range(60, 0, -1):
+                        try:
+                            await context.bot.edit_message_text(
+                                f"⏳ استراحت {remaining} ثانیه...",
+                                chat_id=chat_id,
+                                message_id=rest_msg.message_id
+                            )
+                        except:
+                            pass
+                        await asyncio.sleep(1)
+                    
+                    # پاک کردن پیام استراحت
+                    if rest_msg:
+                        try:
+                            await context.bot.delete_message(chat_id, rest_msg.message_id)
+                        except:
+                            pass
+                        rest_msg = None
+                    
             except FloodWaitError as e:
                 wait_time = min(e.seconds, 300)
                 
@@ -900,8 +946,7 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     account_name = self_account.get('account_name', 'کاربر')
     
     total_count = len(files) * count
-    days_needed = (total_count + 499) // 500
-    
+    days_needed = (total_count + 499) // 500    
     await update.message.reply_text(
         f"""
 🚀 <b>شروع تنظیم پروفایل</b>
@@ -927,6 +972,8 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     total_fail = 0
     file_index = 0
     total_days = 0
+    wait_msg = None
+    rest_msg = None
     
     for file_path in files:
         file_index += 1
@@ -940,7 +987,8 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
         
         success, s_count, f_count, days = await set_profile_with_daily_limit(
             session_string, api_id, api_hash, file_path, count,
-            user_id, update.effective_chat.id, context, file_index, len(files)
+            user_id, update.effective_chat.id, context, file_index, len(files),
+            wait_msg, rest_msg
         )
         
         total_success += s_count
@@ -993,7 +1041,7 @@ async def handle_profile_count(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 # ============ تنظیم پروفایل با محدودیت روزانه ============
-async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_path, count, user_id, chat_id, context, file_index, total_files):
+async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_path, count, user_id, chat_id, context, file_index, total_files, wait_msg=None, rest_msg=None):
     try:
         client = TelegramClient(StringSession(session_string), api_id, api_hash)
         await client.connect()
@@ -1009,7 +1057,6 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
         today_count = 0
         day = 1
         status_msg = None
-        wait_msg = None
         
         for i in range(count):
             if user_id in profile_status and profile_status[user_id] == 'cancel':
@@ -1055,8 +1102,28 @@ async def set_profile_with_daily_limit(session_string, api_id, api_hash, file_pa
                     )
                 
                 if (i + 1) % 10 == 0 and i + 1 < count:
-                    await context.bot.send_message(chat_id, "⏳ استراحت 60 ثانیه...")
-                    await asyncio.sleep(60)
+                    # پیام استراحت
+                    rest_msg = await context.bot.send_message(chat_id, "⏳ استراحت 60 ثانیه...")
+                    for remaining in range(60, 0, -1):
+                        try:
+                            await context.bot.edit_message_text(
+                                f"⏳ استراحت {remaining} ثانیه...",
+                                chat_id=chat_id,
+                                message_id=rest_msg.message_id
+                            )
+                        except:
+                            pass
+                        await asyncio.sleep(1)
+                    
+                    # پاک کردن پیام استراحت
+                    if rest_msg:
+                        try:
+                            await context.bot.delete_message(chat_id, rest_msg.message_id)
+                        except:
+                            pass
+                        rest_msg = None
+                    
+                    await asyncio.sleep(5)
                 else:
                     await asyncio.sleep(5)
                     
