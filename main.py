@@ -17,6 +17,7 @@ from telethon.tl.types import InputPhoto, MessageMediaPhoto, MessageMediaDocumen
 import urllib.request
 
 # ============ تنظیمات ============
+# توکن جدید بعد از Revoke
 TOKEN = "8810050319:AAH5T1qehg7U-oplDB_yp4JVGZl6W866BzY"
 
 logging.basicConfig(
@@ -32,6 +33,7 @@ profile_tasks = {}
 profile_status = {}
 clock_profile_tasks = {}
 salf_clients = {}
+salf_tasks = {}
 
 # ============ فایل ذخیره اطلاعات ============
 DATA_FILE = "selfs.json"
@@ -106,23 +108,24 @@ async def clear_user_session(user_id):
             pass
         del user_sessions[user_id]
 
-# ============ توابع سلف کلاینت و بلاک ============
+# ============ توابع سلف کلاینت (نسخه نهایی) ============
+
 async def get_user_session(user_id):
     user_id_str = str(user_id)
     selfs = self_data.get(user_id_str, [])
-    for self_account in selfs:
+    for idx, self_account in enumerate(selfs):
         if self_account.get('active', True):
             return {
                 'session': self_account.get('session'),
                 'api_id': self_account.get('api_id'),
                 'api_hash': self_account.get('api_hash'),
-                'phone': self_account.get('phone')
+                'phone': self_account.get('phone'),
+                'index': idx
             }
     return None
 
 async def self_message_handler(event, client, user_id):
     try:
-        # فقط پیام‌های خصوصی رو بررسی کن
         if not event.is_private:
             return
         
@@ -130,82 +133,61 @@ async def self_message_handler(event, client, user_id):
         if not sender:
             return
         
-        # اگر فرستنده خود سلف باشه، نادیده بگیر
         if sender.id == user_id:
             return
         
         message = event.message
-        if not message:
+        if not message or not message.text:
             return
         
-        # چک کن که پیام ریپلای شده و حاوی کلمه "بلاک" باشه
-        if message.text and "بلاک" in message.text and message.is_reply:
-            # دریافت پیام اصلی که ریپلای شده
-            try:
-                replied_msg = await event.get_reply_message()
-                if replied_msg:
-                    # فرستنده پیام اصلی
-                    target_user = await client.get_entity(replied_msg.sender_id)
-                    
-                    # بلاک کردن کاربر
-                    try:
-                        await client(BlockRequest(id=target_user.id))
-                        
-                        # ویرایش پیام
-                        try:
-                            await client.edit_message(
-                                event.chat_id,
-                                message.id,
-                                f"◂ کاربر @{target_user.username if target_user.username else 'کاربر'} بلاک شد !"
-                            )
-                        except:
-                            try:
-                                await client.send_message(
-                                    event.chat_id,
-                                    f"◂ کاربر @{target_user.username if target_user.username else 'کاربر'} بلاک شد !"
-                                )
-                            except:
-                                pass
-                        
-                        logger.info(f"User {target_user.id} blocked by self {user_id}")
-                    except Exception as e:
-                        logger.error(f"Error blocking user: {e}")
-            except Exception as e:
-                logger.error(f"Error getting replied message: {e}")
+        # چک کردن کلمه "بلاک"
+        if "بلاک" not in message.text:
+            return
         
-        # اگر پیام معمولی بود و "بلاک" داشت (بدون ریپلای)
-        elif message.text and "بلاک" in message.text:
+        # هدف: اگر ریپلای شده، فرستنده پیام اصلی رو بگیر
+        target_user = None
+        if message.is_reply:
             try:
-                await client(BlockRequest(id=sender.id))
-                
+                replied = await event.get_reply_message()
+                if replied:
+                    target_user = await client.get_entity(replied.sender_id)
+            except:
+                pass
+        
+        if not target_user:
+            target_user = sender
+        
+        # بلاک
+        try:
+            await client(BlockRequest(id=target_user.id))
+            
+            username = target_user.username if target_user.username else "کاربر"
+            new_text = f"◂ کاربر @{username} بلاک شد !"
+            
+            try:
+                await client.edit_message(event.chat_id, message.id, new_text)
+            except:
                 try:
-                    await client.edit_message(
-                        event.chat_id,
-                        message.id,
-                        f"◂ کاربر @{sender.username if sender.username else 'کاربر'} بلاک شد !"
-                    )
+                    await client.send_message(event.chat_id, new_text)
                 except:
-                    try:
-                        await client.send_message(
-                            event.chat_id,
-                            f"◂ کاربر @{sender.username if sender.username else 'کاربر'} بلاک شد !"
-                        )
-                    except:
-                        pass
-                
-                logger.info(f"User {sender.id} blocked by self {user_id}")
-            except Exception as e:
-                logger.error(f"Error blocking user: {e}")
-                
+                    pass
+            
+            logger.info(f"User {target_user.id} blocked by self {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error blocking: {e}")
+            
     except Exception as e:
-        logger.error(f"Error in self_message_handler: {e}")
+        logger.error(f"Error in handler: {e}")
 
 async def start_salf_client(user_id):
     try:
         session_data = get_user_session(user_id)
         if not session_data:
-            return False
+            logger.error(f"No session for user {user_id}")
+            return
         
+        # قطع کلاینت قبلی
         if user_id in salf_clients:
             try:
                 await salf_clients[user_id].disconnect()
@@ -213,6 +195,11 @@ async def start_salf_client(user_id):
                 pass
             del salf_clients[user_id]
         
+        if user_id in salf_tasks:
+            salf_tasks[user_id].cancel()
+            del salf_tasks[user_id]
+        
+        # ایجاد کلاینت جدید
         client = TelegramClient(
             StringSession(session_data['session']),
             session_data['api_id'],
@@ -222,27 +209,45 @@ async def start_salf_client(user_id):
         
         if not await client.is_user_authorized():
             await client.disconnect()
-            return False
+            logger.error(f"User {user_id} not authorized")
+            return
         
         salf_clients[user_id] = client
         
-        @client.on(events.NewMessage)
-        async def message_handler(event):
+        # هندلرها
+        @client.on(events.NewMessage(incoming=True))
+        async def msg_handler(event):
             await self_message_handler(event, client, user_id)
         
-        @client.on(events.MessageEdited)
-        async def edited_handler(event):
-            await self_message_handler(event, client, user_id)
+        # اجرا در Task جداگانه
+        async def run_client():
+            try:
+                await client.run_until_disconnected()
+            except Exception as e:
+                logger.error(f"Client disconnected: {e}")
         
-        await client.run_until_disconnected()
-        return True
+        task = asyncio.create_task(run_client())
+        salf_tasks[user_id] = task
+        
+        logger.info(f"✅ Self client started for user {user_id}")
         
     except Exception as e:
-        logger.error(f"Error in start_salf_client for user {user_id}: {e}")
-        return False
+        logger.error(f"Error starting self client: {e}")
 
-async def start_self_for_user(user_id):
-    asyncio.create_task(start_salf_client(user_id))
+async def stop_salf_client(user_id):
+    """قطع سلف"""
+    if user_id in salf_clients:
+        try:
+            await salf_clients[user_id].disconnect()
+        except:
+            pass
+        del salf_clients[user_id]
+    
+    if user_id in salf_tasks:
+        salf_tasks[user_id].cancel()
+        del salf_tasks[user_id]
+    
+    logger.info(f"Self client stopped for user {user_id}")
 
 # ============ توابع ساعت ============
 async def set_clock_on_profile(session_string, api_id, api_hash):
@@ -360,7 +365,8 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
     keyboard = [
         [InlineKeyboardButton("🔷 ایجاد سلف جدید", callback_data="new_session")],
         [InlineKeyboardButton("📋 لیست سلف‌ها", callback_data="list_selfs"), InlineKeyboardButton("🕐 ساعت پروفایل", callback_data="clock_profile")],
-        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="settings")]
+        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="settings")],
+        [InlineKeyboardButton("🧪 فعال‌سازی سلف", callback_data="start_self")]
     ]
     
     if edit and update.callback_query:
@@ -379,6 +385,36 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
+
+# ============ دکمه فعال‌سازی سلف ============
+async def start_self_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    try:
+        await query.answer()
+    except:
+        pass
+    
+    user_id = query.from_user.id
+    
+    # شروع سلف
+    await start_salf_client(user_id)
+    
+    text = """
+✅ <b>سلف با موفقیت فعال شد!</b>
+
+حالا به پیوی سلف بروید و کلمه "بلاک" را ارسال کنید یا به پیام ریپلای بزنید و "بلاک" بنویسید.
+
+🔹 سلف کاربر را بلاک کرده و پیام را ویرایش می‌کند.
+"""
+    
+    keyboard = [
+        [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
+    ]
+    
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
 # ============ تنظیمات ============
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1336,7 +1372,8 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clock_tasks[user_id] = True
             asyncio.create_task(clock_loop(user_id, session_string, api_id, api_hash))
         
-        asyncio.create_task(start_salf_client(int(user_id)))
+        # شروع سلف
+        await start_salf_client(int(user_id))
         
         text = f"""
 ✅ <b>ساعت با موفقیت فعال شد!</b>
@@ -1396,6 +1433,9 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if user_id in clock_tasks:
             clock_tasks[user_id] = False
+        
+        # قطع سلف
+        await stop_salf_client(int(user_id))
         
         text = f"""
 ❌ <b>ساعت با موفقیت غیرفعال شد!</b>
@@ -1648,7 +1688,8 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await clear_user_session(user_id)
         
-        asyncio.create_task(start_salf_client(user_id))
+        # شروع سلف
+        await start_salf_client(user_id)
         
         text = f"""
 ✅ <b>سلف جدید با موفقیت ایجاد شد!</b>
@@ -1754,7 +1795,8 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await clear_user_session(user_id)
         
-        asyncio.create_task(start_salf_client(user_id))
+        # شروع سلف
+        await start_salf_client(user_id)
         
         text = f"""
 ✅ <b>سلف جدید با موفقیت ایجاد شد!</b>
@@ -1875,6 +1917,7 @@ def main():
         application.add_handler(CallbackQueryHandler(activate_clock, pattern="^activate_clock_"))
         application.add_handler(CallbackQueryHandler(deactivate_clock, pattern="^deactivate_clock_"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
+        application.add_handler(CallbackQueryHandler(start_self_button, pattern="^start_self$"))
         
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND | filters.PHOTO | filters.VIDEO | filters.Document.ALL, handle_messages))
