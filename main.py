@@ -107,7 +107,7 @@ async def clear_user_session(user_id):
             pass
         del user_sessions[user_id]
 
-# ============ توابع سلف کلاینت (اصلاح شده) ============
+# ============ توابع سلف کلاینت ============
 
 async def get_user_session(user_id):
     user_id_str = str(user_id)
@@ -123,8 +123,69 @@ async def get_user_session(user_id):
             }
     return None
 
-async def self_message_handler(event, client, self_user_id):
-    """هندلر پیام‌های دریافتی سلف"""
+async def self_outgoing_message_handler(event, client, self_user_id):
+    """هندلر پیام‌های ارسالی سلف - بلاک کردن گیرنده پیام (دوستت)"""
+    try:
+        # فقط پیام‌های خصوصی
+        if not event.is_private:
+            return
+        
+        # فقط پیام‌های ارسالی خود سلف
+        if event.sender_id != self_user_id:
+            return
+        
+        message = event.message
+        if not message or not message.text:
+            return
+        
+        # چک کردن کلمه "بلاک"
+        if "بلاک" not in message.text:
+            return
+        
+        # دریافت گیرنده پیام (کسی که پیام بهش رفته - همون دوستت)
+        chat = await client.get_entity(event.chat_id)
+        if not chat:
+            return
+        
+        # فقط اگر گیرنده یک کاربر باشه (نه گروه یا کانال)
+        if hasattr(chat, 'id') and not hasattr(chat, 'title'):
+            target_user = chat
+            
+            # جلوگیری از بلاک کردن خود سلف
+            if target_user.id == self_user_id:
+                print("⚠️ نمیشه خود سلف رو بلاک کرد!")
+                return
+            
+            # بلاک کردن گیرنده (دوستت)
+            try:
+                await client(BlockRequest(id=target_user.id))
+                
+                username = target_user.username if target_user.username else "کاربر"
+                new_text = f"◂ کاربر @{username} بلاک شد !"
+                
+                try:
+                    await client.edit_message(event.chat_id, message.id, new_text)
+                    print(f"✅ پیام ویرایش شد: {new_text}")
+                except Exception as e:
+                    print(f"⚠️ خطا در ویرایش پیام: {e}")
+                    try:
+                        await client.send_message(event.chat_id, new_text)
+                    except:
+                        pass
+                
+                print(f"✅ کاربر @{username} با موفقیت بلاک شد!")
+                logger.info(f"User {target_user.id} blocked by self {self_user_id}")
+                
+            except Exception as e:
+                print(f"❌ خطا در بلاک کردن: {e}")
+                logger.error(f"Error blocking: {e}")
+                
+    except Exception as e:
+        print(f"❌ خطا در outgoing handler: {e}")
+        logger.error(f"Error in outgoing handler: {e}")
+
+async def self_incoming_message_handler(event, client, self_user_id):
+    """هندلر پیام‌های دریافتی سلف - بلاک کردن فرستنده"""
     try:
         if not event.is_private:
             return
@@ -177,69 +238,10 @@ async def self_message_handler(event, client, self_user_id):
     except Exception as e:
         logger.error(f"Error in incoming handler: {e}")
 
-async def self_outgoing_message_handler(event, client, self_user_id):
-    """هندلر پیام‌های ارسالی سلف - برای بلاک کردن از طریق پیام ارسالی"""
-    try:
-        # فقط پیام‌های خصوصی که خود سلف فرستاده
-        if not event.is_private:
-            return
-        
-        # اطمینان از اینکه خود سلف فرستنده است
-        if event.sender_id != self_user_id:
-            return
-        
-        message = event.message
-        if not message or not message.text:
-            return
-        
-        # چک کردن کلمه "بلاک" در پیام ارسالی
-        if "بلاک" not in message.text:
-            return
-        
-        # دریافت گیرنده پیام (کسی که پیام بهش فرستاده شده)
-        try:
-            chat = await client.get_entity(event.chat_id)
-            if not chat:
-                return
-            
-            # اگر گیرنده یک کاربر باشد (نه گروه یا کانال)
-            if hasattr(chat, 'id') and not hasattr(chat, 'title'):
-                target_user = chat
-                
-                # بلاک کردن کاربر
-                try:
-                    await client(BlockRequest(id=target_user.id))
-                    
-                    username = target_user.username if target_user.username else "کاربر"
-                    new_text = f"◂ کاربر @{username} بلاک شد !"
-                    
-                    try:
-                        await client.edit_message(event.chat_id, message.id, new_text)
-                    except Exception as e:
-                        logger.error(f"Error editing message: {e}")
-                        try:
-                            await client.send_message(event.chat_id, new_text)
-                        except:
-                            pass
-                    
-                    logger.info(f"✅ User {target_user.id} blocked by self {self_user_id} via outgoing message")
-                    print(f"✅ کاربر @{username} با موفقیت بلاک شد!")
-                    
-                except Exception as e:
-                    logger.error(f"Error blocking via outgoing: {e}")
-                    print(f"❌ خطا در بلاک کردن: {e}")
-        except Exception as e:
-            logger.error(f"Error getting chat entity: {e}")
-            
-    except Exception as e:
-        logger.error(f"Error in outgoing handler: {e}")
-
 async def start_salf_client(user_id):
     try:
-        # اصلاح: استفاده از await
         session_data = await get_user_session(user_id)
         if not session_data:
-            logger.error(f"No session for user {user_id}")
             print(f"❌ سشن برای کاربر {user_id} پیدا نشد!")
             return False
         
@@ -269,7 +271,6 @@ async def start_salf_client(user_id):
         
         if not await client.is_user_authorized():
             await client.disconnect()
-            logger.error(f"User {user_id} not authorized")
             print(f"❌ کاربر {user_id} احراز هویت نشد!")
             return False
         
@@ -281,26 +282,27 @@ async def start_salf_client(user_id):
         
         salf_clients[user_id] = client
         
-        # هندلر پیام‌های دریافتی (وقتی کاربر به سلف پیام میده)
-        @client.on(events.NewMessage(incoming=True))
-        async def incoming_handler(event):
-            await self_message_handler(event, client, self_user_id)
-        
-        # هندلر پیام‌های ارسالی (وقتی سلف به کسی پیام میده) - این مهم‌ترین بخشه
+        # هندلر پیام‌های ارسالی (مهم‌ترین بخش - بلاک کردن دوستان)
         @client.on(events.NewMessage(outgoing=True))
         async def outgoing_handler(event):
             await self_outgoing_message_handler(event, client, self_user_id)
         
-        logger.info(f"✅ Self client started for user {user_id}")
+        # هندلر پیام‌های دریافتی (وقتی کسی به سلف پیام میده)
+        @client.on(events.NewMessage(incoming=True))
+        async def incoming_handler(event):
+            await self_incoming_message_handler(event, client, self_user_id)
+        
         print("=" * 60)
         print(f"✅ سلف با موفقیت فعال شد!")
         print(f"👤 نام اکانت: {self_name}")
         print(f"🆔 آیدی: {self_user_id}")
         print(f"📛 یوزرنیم: @{self_username}")
-        print(f"📌 تعداد سلف‌های فعال: {len(self_data.get(str(user_id), []))}")
         print("-" * 60)
-        print("📌 حالا میتونی به پیوی هر کسی بری و 'بلاک' بنویسی تا بلاک بشه!")
-        print("📌 یا وقتی کسی به سلف پیام داد، بهش ریپلای بزن و 'بلاک' بنویس")
+        print("📌 روش اول - بلاک کردن دوستان:")
+        print("   به پیوی هر کسی برو و 'بلاک' بنویس تا بلاک بشه!")
+        print("📌 روش دوم - بلاک کردن افرادی که به سلف پیام دادن:")
+        print("   به پیامش ریپلای بزن و 'بلاک' بنویس")
+        print("⚠️ دقت کن که خود سلف رو بلاک نکنی!")
         print("=" * 60)
         
         # اجرا در Task جداگانه
@@ -308,7 +310,6 @@ async def start_salf_client(user_id):
             try:
                 await client.run_until_disconnected()
             except Exception as e:
-                logger.error(f"Client disconnected: {e}")
                 print(f"❌ کلاینت سلف قطع شد: {e}")
         
         task = asyncio.create_task(run_client())
@@ -317,8 +318,8 @@ async def start_salf_client(user_id):
         return True
         
     except Exception as e:
-        logger.error(f"Error starting self client: {e}")
         print(f"❌ خطا در شروع سلف: {e}")
+        logger.error(f"Error starting self client: {e}")
         return False
 
 async def stop_salf_client(user_id):
@@ -338,8 +339,8 @@ async def stop_salf_client(user_id):
             pass
         del salf_tasks[user_id]
     
-    logger.info(f"Self client stopped for user {user_id}")
     print(f"🛑 سلف برای کاربر {user_id} متوقف شد")
+    logger.info(f"Self client stopped for user {user_id}")
 
 # ============ توابع ساعت ============
 async def set_clock_on_profile(session_string, api_id, api_hash):
@@ -488,22 +489,23 @@ async def start_self_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     
-    # شروع سلف و دریافت نتیجه
     result = await start_salf_client(user_id)
     
     if result:
         text = """
 ✅ <b>سلف با موفقیت فعال شد!</b>
 
-📌 <b>حالا میتونی از دو روش زیر بلاک کنی:</b>
+📌 <b>دو روش برای بلاک کردن:</b>
 
-1️⃣ <b>روش اول - پیام دریافتی:</b>
-   وقتی کسی به سلف پیام میده، بهش ریپلای بزن و "بلاک" بنویس
+1️⃣ <b>روش اول - بلاک کردن دوستان (مهم):</b>
+   با اکانت سلف به پیوی هر کسی برو و "بلاک" بنویس
+   ➡️ سلف اون شخص رو بلاک میکنه!
 
-2️⃣ <b>روش دوم - پیام ارسالی (مورد نظر شما):</b>
-   به پیوی هر کسی برو و "بلاک" بنویس (سلف اون رو بلاک میکنه)
+2️⃣ <b>روش دوم - بلاک کردن افرادی که به سلف پیام دادن:</b>
+   وقتی کسی به سلف پیام میده، به پیامش ریپلای بزن و "بلاک" بنویس
+   ➡️ سلف اون شخص رو بلاک میکنه!
 
-🔹 سلف کاربر را بلاک کرده و پیام را ویرایش می‌کند.
+⚠️ دقت کن که خود سلف رو بلاک نکنی!
 """
     else:
         text = """
