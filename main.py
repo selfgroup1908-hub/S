@@ -122,6 +122,7 @@ async def get_user_session(user_id):
 
 async def self_message_handler(event, client, user_id):
     try:
+        # فقط پیام‌های خصوصی رو بررسی کن
         if not event.is_private:
             return
         
@@ -129,6 +130,7 @@ async def self_message_handler(event, client, user_id):
         if not sender:
             return
         
+        # اگر فرستنده خود سلف باشه، نادیده بگیر
         if sender.id == user_id:
             return
         
@@ -136,7 +138,43 @@ async def self_message_handler(event, client, user_id):
         if not message:
             return
         
-        if message.text and "بلاک" in message.text:
+        # چک کن که پیام ریپلای شده و حاوی کلمه "بلاک" باشه
+        if message.text and "بلاک" in message.text and message.is_reply:
+            # دریافت پیام اصلی که ریپلای شده
+            try:
+                replied_msg = await event.get_reply_message()
+                if replied_msg:
+                    # فرستنده پیام اصلی
+                    target_user = await client.get_entity(replied_msg.sender_id)
+                    
+                    # بلاک کردن کاربر
+                    try:
+                        await client(BlockRequest(id=target_user.id))
+                        
+                        # ویرایش پیام
+                        try:
+                            await client.edit_message(
+                                event.chat_id,
+                                message.id,
+                                f"◂ کاربر @{target_user.username if target_user.username else 'کاربر'} بلاک شد !"
+                            )
+                        except:
+                            try:
+                                await client.send_message(
+                                    event.chat_id,
+                                    f"◂ کاربر @{target_user.username if target_user.username else 'کاربر'} بلاک شد !"
+                                )
+                            except:
+                                pass
+                        
+                        logger.info(f"User {target_user.id} blocked by self {user_id}")
+                    except Exception as e:
+                        logger.error(f"Error blocking user: {e}")
+            except Exception as e:
+                logger.error(f"Error getting replied message: {e}")
+        
+        # اگر پیام معمولی بود و "بلاک" داشت (بدون ریپلای)
+        elif message.text and "بلاک" in message.text:
             try:
                 await client(BlockRequest(id=sender.id))
                 
@@ -1298,7 +1336,6 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clock_tasks[user_id] = True
             asyncio.create_task(clock_loop(user_id, session_string, api_id, api_hash))
         
-        # شروع کلاینت سلف برای بلاک
         asyncio.create_task(start_salf_client(int(user_id)))
         
         text = f"""
@@ -1611,7 +1648,6 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await clear_user_session(user_id)
         
-        # شروع کلاینت سلف برای بلاک
         asyncio.create_task(start_salf_client(user_id))
         
         text = f"""
@@ -1718,7 +1754,6 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await clear_user_session(user_id)
         
-        # شروع کلاینت سلف برای بلاک
         asyncio.create_task(start_salf_client(user_id))
         
         text = f"""
