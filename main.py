@@ -458,8 +458,7 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
     keyboard = [
         [InlineKeyboardButton("🔷 ایجاد سلف جدید", callback_data="new_session")],
         [InlineKeyboardButton("📋 لیست سلف‌ها", callback_data="list_selfs"), InlineKeyboardButton("🕐 ساعت پروفایل", callback_data="clock_profile")],
-        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="settings")],
-        [InlineKeyboardButton("🧪 فعال‌سازی سلف", callback_data="start_self")]
+        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="settings")]
     ]
     
     if edit and update.callback_query:
@@ -478,53 +477,6 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
-
-# ============ دکمه فعال‌سازی سلف ============
-async def start_self_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    try:
-        await query.answer()
-    except:
-        pass
-    
-    user_id = query.from_user.id
-    
-    result = await start_salf_client(user_id)
-    
-    if result:
-        text = """
-✅ <b>سلف با موفقیت فعال شد!</b>
-
-📌 <b>دو روش برای بلاک کردن:</b>
-
-1️⃣ <b>روش اول - بلاک کردن دوستان (مهم):</b>
-   با اکانت سلف به پیوی هر کسی برو و "بلاک" بنویس
-   ➡️ سلف اون شخص رو بلاک میکنه!
-
-2️⃣ <b>روش دوم - بلاک کردن افرادی که به سلف پیام دادن:</b>
-   وقتی کسی به سلف پیام میده، به پیامش ریپلای بزن و "بلاک" بنویس
-   ➡️ سلف اون شخص رو بلاک میکنه!
-
-⚠️ دقت کن که خود سلف رو بلاک نکنی!
-"""
-    else:
-        text = """
-❌ <b>خطا در فعال‌سازی سلف!</b>
-
-لطفاً مطمئن شوید که:
-• سلف معتبر دارید
-• سشن و اطلاعات اکانت صحیح است
-• اکانت فعال است
-"""
-    
-    keyboard = [
-        [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-    ]
-    
-    try:
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    except:
-        pass
 
 # ============ تنظیمات ============
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1482,6 +1434,7 @@ async def activate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clock_tasks[user_id] = True
             asyncio.create_task(clock_loop(user_id, session_string, api_id, api_hash))
         
+        # شروع خودکار سلف
         await start_salf_client(int(user_id))
         
         text = f"""
@@ -1543,6 +1496,7 @@ async def deactivate_clock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id in clock_tasks:
             clock_tasks[user_id] = False
         
+        # قطع سلف
         await stop_salf_client(int(user_id))
         
         text = f"""
@@ -1796,6 +1750,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await clear_user_session(user_id)
         
+        # شروع خودکار سلف
         await start_salf_client(user_id)
         
         text = f"""
@@ -1806,6 +1761,8 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🔑 شناسه جلسه: <code>{mask_string(session_string, 10)}</code>
 
 سلف جدید به لیست شما اضافه گردید.
+🔹 سلف به‌طور خودکار فعال شده است!
+📌 حالا می‌توانید به پیوی دوستان خود بروید و "بلاک" بنویسید تا بلاک شوند.
 """
         
         keyboard = [
@@ -1902,6 +1859,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await clear_user_session(user_id)
         
+        # شروع خودکار سلف
         await start_salf_client(user_id)
         
         text = f"""
@@ -1912,6 +1870,8 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🔑 شناسه جلسه: <code>{mask_string(session_string, 10)}</code>
 
 سلف جدید به لیست شما اضافه گردید.
+🔹 سلف به‌طور خودکار فعال شده است!
+📌 حالا می‌توانید به پیوی دوستان خود بروید و "بلاک" بنویسید تا بلاک شوند.
 """
         
         keyboard = [
@@ -2023,7 +1983,6 @@ def main():
         application.add_handler(CallbackQueryHandler(activate_clock, pattern="^activate_clock_"))
         application.add_handler(CallbackQueryHandler(deactivate_clock, pattern="^deactivate_clock_"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
-        application.add_handler(CallbackQueryHandler(start_self_button, pattern="^start_self$"))
         
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND | filters.PHOTO | filters.VIDEO | filters.Document.ALL, handle_messages))
