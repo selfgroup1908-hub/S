@@ -28,9 +28,7 @@ from telethon.tl.types import User
 import urllib.request
 
 # ============ تنظیمات ============
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("❌ BOT_TOKEN not found in environment variables!")
+TOKEN = "8904776846:AAGRyDG6tDubOSAuKdqN0fIDj36vyJif-dc"
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -1590,7 +1588,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ <b>لطفاً از دکمه ایجاد سلف استفاده فرمایید.</b>", parse_mode='HTML')
         return
 
-    code = clean_code(raw_code)
+    code = raw_code.replace('.', '').replace(' ', '').replace('-', '').strip()
 
     if not code.isdigit() or len(code) != 5:
         await update.message.reply_text(
@@ -1881,7 +1879,6 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ اجرا ============
 async def shutdown():
     logger.info("Shutting down...")
-    # لغو همه taskها
     for key, task in self_tasks.items():
         task.cancel()
         try:
@@ -1895,77 +1892,67 @@ async def shutdown():
                 await task
             except:
                 pass
-    # قطع همه clientها
     for key, client in self_clients.items():
         try:
             await client.disconnect()
         except:
             pass
-    # ذخیره داده
     await save_data()
     logger.info("Shutdown complete")
 
 def main():
     try:
-        # حذف webhook با timeout
+        import urllib.request
+        url = f"https://api.telegram.org/bot{TOKEN}/deleteWebhook"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            pass
+    except:
+        pass
+
+    print("=" * 60)
+    print("🌟 ربات مدیریت حساب‌های شخصی")
+    print("=" * 60)
+    print("✅ ربات با موفقیت راه‌اندازی شد.")
+    print("💡 برای شروع از /start استفاده فرمایید.")
+    print("=" * 60)
+
+    application = Application.builder().token(TOKEN).build()
+
+    application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
+    application.add_handler(CallbackQueryHandler(list_selfs, pattern="^list_selfs$"))
+    application.add_handler(CallbackQueryHandler(manage_self, pattern="^manage_"))
+    application.add_handler(CallbackQueryHandler(font_settings, pattern="^font_settings$"))
+    application.add_handler(CallbackQueryHandler(font_select, pattern="^font_select_"))
+    application.add_handler(CallbackQueryHandler(font_apply, pattern="^font_apply_"))
+    application.add_handler(CallbackQueryHandler(connect_self, pattern="^connect_self_"))
+    application.add_handler(CallbackQueryHandler(disconnect_self, pattern="^disconnect_self_"))
+    application.add_handler(CallbackQueryHandler(new_profile, pattern="^new_profile_"))
+    application.add_handler(CallbackQueryHandler(done_profile, pattern="^done_profile_"))
+    application.add_handler(CallbackQueryHandler(cancel_profile, pattern="^cancel_profile_"))
+    application.add_handler(CallbackQueryHandler(activate_clock, pattern="^activate_clock_"))
+    application.add_handler(CallbackQueryHandler(deactivate_clock, pattern="^deactivate_clock_"))
+    application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
+
+    application.add_handler(CommandHandler("start", main_menu))
+    application.add_handler(MessageHandler(
+        (filters.TEXT & ~filters.COMMAND) | filters.PHOTO | filters.VIDEO | filters.Document.ALL,
+        handle_messages
+    ))
+
+    async def error_handler(update, context):
+        logger.error(f"Update {update} caused error {context.error}")
         try:
-            import urllib.request
-            url = f"https://api.telegram.org/bot{TOKEN}/deleteWebhook"
-            with urllib.request.urlopen(url, timeout=5) as response:
-                pass
+            if update and update.effective_message:
+                await update.effective_message.reply_text(
+                    "❌ خطا در پردازش درخواست!\nلطفاً دوباره تلاش کنید.",
+                    parse_mode='HTML'
+                )
         except:
             pass
 
-        print("=" * 60)
-        print("🌟 ربات مدیریت حساب‌های شخصی")
-        print("=" * 60)
-        print("✅ ربات با موفقیت راه‌اندازی شد.")
-        print("💡 برای شروع از /start استفاده فرمایید.")
-        print("=" * 60)
+    application.add_error_handler(error_handler)
 
-        application = Application.builder().token(TOKEN).build()
-
-        # هندلرها
-        application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
-        application.add_handler(CallbackQueryHandler(list_selfs, pattern="^list_selfs$"))
-        application.add_handler(CallbackQueryHandler(manage_self, pattern="^manage_"))
-        application.add_handler(CallbackQueryHandler(font_settings, pattern="^font_settings$"))
-        application.add_handler(CallbackQueryHandler(font_select, pattern="^font_select_"))
-        application.add_handler(CallbackQueryHandler(font_apply, pattern="^font_apply_"))
-        application.add_handler(CallbackQueryHandler(connect_self, pattern="^connect_self_"))
-        application.add_handler(CallbackQueryHandler(disconnect_self, pattern="^disconnect_self_"))
-        application.add_handler(CallbackQueryHandler(new_profile, pattern="^new_profile_"))
-        application.add_handler(CallbackQueryHandler(done_profile, pattern="^done_profile_"))
-        application.add_handler(CallbackQueryHandler(cancel_profile, pattern="^cancel_profile_"))
-        application.add_handler(CallbackQueryHandler(activate_clock, pattern="^activate_clock_"))
-        application.add_handler(CallbackQueryHandler(deactivate_clock, pattern="^deactivate_clock_"))
-        application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
-
-        application.add_handler(CommandHandler("start", main_menu))
-        application.add_handler(MessageHandler(
-            (filters.TEXT & ~filters.COMMAND) | filters.PHOTO | filters.VIDEO | filters.Document.ALL,
-            handle_messages
-        ))
-
-        # ثبت error handler
-        async def error_handler(update, context):
-            logger.error(f"Update {update} caused error {context.error}")
-            try:
-                if update and update.effective_message:
-                    await update.effective_message.reply_text(
-                        "❌ خطا در پردازش درخواست!\nلطفاً دوباره تلاش کنید.",
-                        parse_mode='HTML'
-                    )
-            except:
-                pass
-
-        application.add_error_handler(error_handler)
-
-        # اجرا
-        application.run_polling(drop_pending_updates=True)
-
-    except Exception as e:
-        print(f"❌ خطا: {e}")
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     try:
