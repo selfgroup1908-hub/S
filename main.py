@@ -917,7 +917,8 @@ async def font_apply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ تنظیم پروفایل ============
 async def new_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query    try:
+    query = update.callback_query
+    try:
         await query.answer()
     except Exception as e:
         logger.exception(f"Error answering query: {e}")
