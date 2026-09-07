@@ -917,8 +917,7 @@ async def font_apply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ تنظیم پروفایل ============
 async def new_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    try:
+    query = update.callback_query    try:
         await query.answer()
     except Exception as e:
         logger.exception(f"Error answering query: {e}")
@@ -1786,6 +1785,26 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
+    # اول چک کن که کاربر در حالت ساخت سلف هست
+    if user_id in user_sessions:
+        step = user_sessions[user_id].get("step")
+        if step == "phone":
+            await handle_phone(update, context)
+            return
+        elif step == "api_id":
+            await handle_api_id(update, context)
+            return
+        elif step == "api_hash":
+            await handle_api_hash(update, context)
+            return
+        elif step == "code":
+            await handle_code(update, context)
+            return
+        elif step == "password":
+            await handle_password(update, context)
+            return
+
+    # چک کن که در مرحله تنظیم پروفایل هست
     if 'profile_step' in context.user_data:
         step = context.user_data['profile_step']
         if step == 'waiting_media':
@@ -1795,21 +1814,15 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_profile_count(update, context)
             return
 
-    if user_id in user_sessions:
-        step = user_sessions[user_id].get("step")
-        if step == "phone":
-            await handle_phone(update, context)
-        elif step == "api_id":
-            await handle_api_id(update, context)
-        elif step == "api_hash":
-            await handle_api_hash(update, context)
-        elif step == "code":
-            await handle_code(update, context)
-        elif step == "password":
-            await handle_password(update, context)
-        return
-
-    await update.message.reply_text("❌ <b>لطفاً از دکمه‌های منو استفاده فرمایید.</b>", parse_mode='HTML')
+    # اگر هیچکدام نبود، پیام خطا بده
+    await update.message.reply_text(
+        "❌ <b>لطفاً از دکمه‌های منو استفاده فرمایید.</b>\n\n"
+        "برای شروع، روی دکمه‌های زیر کلیک کنید:\n"
+        "• 🔷 ایجاد سلف جدید\n"
+        "• 📋 لیست سلف‌ها\n"
+        "• 🎨 فونت ساعت",
+        parse_mode='HTML'
+    )
 
 # ============ اجرا ============
 def main():
@@ -1833,7 +1846,7 @@ def main():
         # ساخت اپلیکیشن
         application = Application.builder().token(TOKEN).build()
 
-        # اضافه کردن هندلرها
+        # اضافه کردن هندلرهای دکمه
         application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
         application.add_handler(CallbackQueryHandler(list_selfs, pattern="^list_selfs$"))
         application.add_handler(CallbackQueryHandler(manage_self, pattern="^manage_"))
@@ -1849,11 +1862,16 @@ def main():
         application.add_handler(CallbackQueryHandler(deactivate_clock, pattern="^deactivate_clock_"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
 
+        # دستور start
         application.add_handler(CommandHandler("start", main_menu))
-        application.add_handler(MessageHandler(
-            (filters.TEXT & ~filters.COMMAND) | filters.PHOTO | filters.VIDEO | filters.Document.ALL,
-            handle_messages
-        ))
+
+        # هندلر پیام‌ها - این باید آخرین هندلر باشد
+        application.add_handler(
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND | filters.PHOTO | filters.VIDEO | filters.Document.ALL,
+                handle_messages
+            )
+        )
 
         # هندلر خطا
         async def error_handler(update, context):
