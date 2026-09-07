@@ -24,11 +24,9 @@ from telethon.tl.functions.photos import UploadProfilePhotoRequest
 from telethon.tl.functions.contacts import BlockRequest
 from telethon.tl.types import User
 import urllib.request
-import signal
-import sys
 
 # ============ تنظیمات ============
-TOKEN = "8904776846:AAGRyDG6tDubOSAuKdqN0fIDj36vyJif-dc"
+TOKEN = "8810050319:AAH5T1qehg7U-oplDB_yp4JVGZl6W866BzY"
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
